@@ -232,6 +232,48 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   new_job_attachment: 'New Photo',
 }
 
+export type ActivityType =
+  | 'job_created'
+  | 'status_changed'
+  | 'quote_submitted'
+  | 'interest_expressed'
+  | 'quote_accepted'
+  | 'quote_rejected'
+  | 'quote_withdrawn'
+  | 'note_added'
+  | 'photo_uploaded'
+  | 'message_sent'
+  | 'review_submitted'
+  | 'completion_requested'
+  | 'completion_confirmed'
+
+export interface JobActivity {
+  id: string
+  job_id: string
+  activity_type: ActivityType
+  actor_id: string | null
+  detail: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+  actor?: Pick<Profile, 'id' | 'full_name' | 'email' | 'role' | 'business_name'> | null
+}
+
+export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
+  job_created: 'Job Posted',
+  status_changed: 'Status Updated',
+  quote_submitted: 'Quote Submitted',
+  interest_expressed: 'Interest Expressed',
+  quote_accepted: 'Quote Accepted',
+  quote_rejected: 'Quote Rejected',
+  quote_withdrawn: 'Quote Withdrawn',
+  note_added: 'Note Added',
+  photo_uploaded: 'Photo Uploaded',
+  message_sent: 'Message Sent',
+  review_submitted: 'Review Submitted',
+  completion_requested: 'Completion Requested',
+  completion_confirmed: 'Completion Confirmed',
+}
+
 export const STAR_RATINGS = [1, 2, 3, 4, 5] as const
 
 export const AUSTRALIAN_STATES = [

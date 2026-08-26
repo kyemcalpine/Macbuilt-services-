@@ -11,6 +11,8 @@ import { ReviewForm } from '../components/ReviewForm'
 import { ReviewCard } from '../components/ReviewCard'
 import { PhotoUploader } from '../components/PhotoUploader'
 import { PhotoGallery } from '../components/PhotoGallery'
+import { JobActivityTimeline } from '../components/JobActivityTimeline'
+import { useJobActivity } from '../hooks/useJobActivity'
 import type { Job, JobQuote, JobReview, JobStatus, ResponseType, JobAttachment } from '../types'
 import { JOB_STATUS_LABELS, VALID_STATUS_TRANSITIONS, QUOTE_PREFERENCE_LABELS, RESPONSE_TYPE_LABELS } from '../types'
 
@@ -32,6 +34,8 @@ export function JobDetailPage() {
   const [showReviewForm, setShowReviewForm] = useState(false)
   const [tradieRatings, setTradieRatings] = useState<Record<string, { average: number; count: number }>>({})
   const [attachments, setAttachments] = useState<JobAttachment[]>([])
+  const { activities, loading: activityLoading, error: activityError } = useJobActivity(id)
+  const [lastMessage, setLastMessage] = useState<{ body: string; created_at: string; conversationId: string } | null>(null)
 
   const fetchJob = useCallback(async () => {
     setLoading(true)
@@ -173,6 +177,41 @@ export function JobDetailPage() {
   useEffect(() => {
     fetchAttachments()
   }, [fetchAttachments])
+
+  useEffect(() => {
+    if (!id || !profile || !job) return
+    const ownerCheck = profile.id === job.customer_id
+    const tradieCheck = profile.id === job.assigned_tradie_id
+    if (!ownerCheck && !tradieCheck) return
+    const otherPartyId = ownerCheck ? job.assigned_tradie_id : job.customer_id
+    if (!otherPartyId) return
+
+    const fetchLastMessage = async () => {
+      const { data: conv } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('job_id', id)
+        .eq('customer_id', ownerCheck ? profile.id : otherPartyId)
+        .eq('tradie_id', tradieCheck ? profile.id : otherPartyId)
+        .maybeSingle()
+
+      if (!conv) return
+
+      const { data: msg } = await supabase
+        .from('messages')
+        .select('body, created_at')
+        .eq('conversation_id', conv.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (msg) {
+        setLastMessage({ body: msg.body, created_at: msg.created_at, conversationId: conv.id })
+      }
+    }
+
+    fetchLastMessage()
+  }, [id, profile, job])
 
   const handleDeleteAttachment = async (attachmentId: string, storagePath: string) => {
     const { error: rpcError } = await supabase.rpc('delete_job_attachment', { p_attachment_id: attachmentId })
@@ -483,6 +522,25 @@ export function JobDetailPage() {
             <h3 className="font-semibold text-neutral-900 mb-3">Description</h3>
             <p className="text-neutral-700 whitespace-pre-wrap">{job.description}</p>
           </div>
+
+          {/* Activity timeline */}
+          {(isOwner || isAssignedTradie || isAdmin) && (
+            <div className="card p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <h3 className="font-semibold text-neutral-900">Activity</h3>
+                <span className="flex items-center gap-1 text-xs text-green-600">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                  Live
+                </span>
+              </div>
+              <JobActivityTimeline
+                activities={activities}
+                loading={activityLoading}
+                error={activityError}
+                currentUserId={profile?.id || ''}
+              />
+            </div>
+          )}
 
           {/* Job details */}
           <div className="card p-6">
@@ -980,6 +1038,18 @@ export function JobDetailPage() {
               >
                 Message Customer
               </button>
+              {lastMessage && (
+                <Link
+                  to={`/conversations/${lastMessage.conversationId}`}
+                  className="block mt-3 p-3 rounded-lg bg-neutral-50 hover:bg-neutral-100 transition-colors"
+                >
+                  <p className="text-xs text-neutral-500 mb-1">Last message</p>
+                  <p className="text-sm text-neutral-700 line-clamp-2">{lastMessage.body}</p>
+                  <p className="text-xs text-neutral-400 mt-1">
+                    {new Date(lastMessage.created_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </Link>
+              )}
             </div>
           )}
 
