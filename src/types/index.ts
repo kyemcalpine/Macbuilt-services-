@@ -22,6 +22,12 @@ export interface Profile {
 
 export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'cancelled'
 
+export type QuotePreference = 'open_to_quotes' | 'fixed_budget'
+
+export type ResponseType = 'quote' | 'interest'
+
+export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn'
+
 export interface Job {
   id: string
   customer_id: string
@@ -30,6 +36,8 @@ export interface Job {
   trade_category: string
   status: JobStatus
   budget: number | null
+  quote_preference: QuotePreference
+  assigned_tradie_id: string | null
   scheduled_date: string | null
   address_line1: string | null
   address_line2: string | null
@@ -40,6 +48,33 @@ export interface Job {
   created_at: string
   updated_at: string
   customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'state' | 'suburb' | 'postcode'>
+  assigned_tradie?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'business_name' | 'trade_category' | 'verification_status' | 'state' | 'suburb' | 'postcode'>
+}
+
+export interface JobQuote {
+  id: string
+  job_id: string
+  tradie_id: string
+  response_type: ResponseType
+  amount: number | null
+  message: string
+  notes: string | null
+  estimated_start_date: string | null
+  estimated_duration: string | null
+  status: QuoteStatus
+  created_at: string
+  updated_at: string
+  tradie?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'business_name' | 'trade_category' | 'verification_status' | 'state' | 'suburb' | 'postcode'>
+}
+
+export interface JobNote {
+  id: string
+  job_id: string
+  author_id: string
+  note: string
+  created_at: string
+  updated_at: string
+  author?: Pick<Profile, 'id' | 'email' | 'full_name' | 'role' | 'business_name'>
 }
 
 export const JOB_STATUSES: JobStatus[] = ['open', 'assigned', 'in_progress', 'completed', 'cancelled']
@@ -58,6 +93,25 @@ export const VALID_STATUS_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   in_progress: ['completed', 'cancelled'],
   completed: [],
   cancelled: [],
+}
+
+export const QUOTE_STATUSES: QuoteStatus[] = ['pending', 'accepted', 'rejected', 'withdrawn']
+
+export const QUOTE_STATUS_LABELS: Record<QuoteStatus, string> = {
+  pending: 'Pending',
+  accepted: 'Accepted',
+  rejected: 'Rejected',
+  withdrawn: 'Withdrawn',
+}
+
+export const RESPONSE_TYPE_LABELS: Record<ResponseType, string> = {
+  quote: 'Quote',
+  interest: 'Expression of Interest',
+}
+
+export const QUOTE_PREFERENCE_LABELS: Record<QuotePreference, string> = {
+  open_to_quotes: 'Open to Quotes',
+  fixed_budget: 'Fixed Budget / No Quotes',
 }
 
 export const AUSTRALIAN_STATES = [

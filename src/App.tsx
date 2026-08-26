@@ -16,6 +16,9 @@ import { JobsListPage } from './pages/JobsListPage'
 import { JobDetailPage } from './pages/JobDetailPage'
 import { JobCreatePage } from './pages/JobCreatePage'
 import { JobEditPage } from './pages/JobEditPage'
+import { MarketplacePage } from './pages/MarketplacePage'
+import { QuotesPage } from './pages/QuotesPage'
+import { TradieRoute } from './components/TradieRoute'
 
 export default function App() {
   return (
@@ -48,6 +51,12 @@ export default function App() {
           } />
           <Route path="/jobs/:id/edit" element={
             <ProtectedRoute><Layout><JobEditPage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/marketplace" element={
+            <TradieRoute><Layout><MarketplacePage /></Layout></TradieRoute>
+          } />
+          <Route path="/quotes" element={
+            <TradieRoute><Layout><QuotesPage /></Layout></TradieRoute>
           } />
 
           {/* Admin routes */}

@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { AUSTRALIAN_STATES, TRADE_CATEGORIES } from '../types'
-import type { Job } from '../types'
+import type { Job, QuotePreference } from '../types'
 
 interface JobFormProps {
   job?: Job
@@ -14,6 +14,7 @@ interface FormData {
   description: string
   trade_category: string
   budget: string
+  quote_preference: QuotePreference
   scheduled_date: string
   address_line1: string
   address_line2: string
@@ -33,6 +34,7 @@ export function JobForm({ job }: JobFormProps) {
     description: job?.description || '',
     trade_category: job?.trade_category || '',
     budget: job?.budget != null ? String(job.budget) : '',
+    quote_preference: job?.quote_preference || 'open_to_quotes',
     scheduled_date: job?.scheduled_date ? job.scheduled_date.slice(0, 16) : '',
     address_line1: job?.address_line1 || '',
     address_line2: job?.address_line2 || '',
@@ -97,6 +99,7 @@ export function JobForm({ job }: JobFormProps) {
       description: form.description.trim(),
       trade_category: form.trade_category,
       budget: form.budget ? parseFloat(form.budget) : null,
+      quote_preference: form.quote_preference,
       scheduled_date: form.scheduled_date || null,
       address_line1: form.address_line1.trim() || null,
       address_line2: form.address_line2.trim() || null,
@@ -224,6 +227,52 @@ export function JobForm({ job }: JobFormProps) {
               className={inputClass('scheduled_date')}
             />
             {fieldErrors.scheduled_date && <p className="text-sm text-red-600 mt-1">{fieldErrors.scheduled_date}</p>}
+          </div>
+        </div>
+
+        <div>
+          <label className="label">Quote Preference</label>
+          <div className="flex gap-3 mt-1">
+            <label className={`flex-1 cursor-pointer rounded-lg border p-3 transition-colors ${
+              form.quote_preference === 'open_to_quotes'
+                ? 'border-primary-500 bg-primary-50'
+                : 'border-neutral-300 hover:bg-neutral-50'
+            }`}>
+              <div className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="quote_preference"
+                  value="open_to_quotes"
+                  checked={form.quote_preference === 'open_to_quotes'}
+                  onChange={() => update('quote_preference', 'open_to_quotes')}
+                  className="mt-1"
+                />
+                <div>
+                  <span className="text-sm font-medium text-neutral-900">Open to Quotes</span>
+                  <p className="text-xs text-neutral-500 mt-0.5">Tradies can submit quotes with their proposed price</p>
+                </div>
+              </div>
+            </label>
+            <label className={`flex-1 cursor-pointer rounded-lg border p-3 transition-colors ${
+              form.quote_preference === 'fixed_budget'
+                ? 'border-primary-500 bg-primary-50'
+                : 'border-neutral-300 hover:bg-neutral-50'
+            }`}>
+              <div className="flex items-start gap-2">
+                <input
+                  type="radio"
+                  name="quote_preference"
+                  value="fixed_budget"
+                  checked={form.quote_preference === 'fixed_budget'}
+                  onChange={() => update('quote_preference', 'fixed_budget')}
+                  className="mt-1"
+                />
+                <div>
+                  <span className="text-sm font-medium text-neutral-900">Fixed Budget / No Quotes</span>
+                  <p className="text-xs text-neutral-500 mt-0.5">Tradies can express interest in your stated budget</p>
+                </div>
+              </div>
+            </label>
           </div>
         </div>
       </div>

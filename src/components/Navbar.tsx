@@ -40,6 +40,16 @@ export function Navbar() {
                 Jobs
               </Link>
             )}
+            {session && profile?.role === 'tradie' && profile?.verification_status === 'approved' && (
+              <Link to="/marketplace" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
+                Marketplace
+              </Link>
+            )}
+            {session && profile?.role === 'tradie' && profile?.verification_status === 'approved' && (
+              <Link to="/quotes" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
+                My Quotes
+              </Link>
+            )}
             {session && (
               <Link to="/profile" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
                 Profile
@@ -96,6 +106,16 @@ export function Navbar() {
                 <Link to="/jobs" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
                   Jobs
                 </Link>
+                {profile?.role === 'tradie' && profile?.verification_status === 'approved' && (
+                  <Link to="/marketplace" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
+                    Marketplace
+                  </Link>
+                )}
+                {profile?.role === 'tradie' && profile?.verification_status === 'approved' && (
+                  <Link to="/quotes" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
+                    My Quotes
+                  </Link>
+                )}
                 <Link to="/profile" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
                   Profile
                 </Link>
