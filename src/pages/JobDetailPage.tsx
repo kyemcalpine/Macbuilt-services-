@@ -184,6 +184,41 @@ export function JobDetailPage() {
     fetchQuotes()
   }
 
+  const handleStartConversation = async (tradieId: string) => {
+    if (!job || !profile) return
+    setActionLoading(true)
+    setActionError('')
+
+    // Check if a conversation already exists for this job + customer + tradie
+    const { data: existing } = await supabase
+      .from('conversations')
+      .select('id')
+      .eq('job_id', job.id)
+      .eq('customer_id', job.customer_id)
+      .eq('tradie_id', tradieId)
+      .maybeSingle()
+
+    if (existing) {
+      navigate(`/messages/${existing.id}`)
+      return
+    }
+
+    // Create a new conversation
+    const { data: newConv, error: insertError } = await supabase
+      .from('conversations')
+      .insert({ job_id: job.id, customer_id: job.customer_id, tradie_id: tradieId })
+      .select('id')
+      .single()
+
+    if (insertError || !newConv) {
+      setActionError('Could not start conversation. Please try again.')
+      setActionLoading(false)
+      return
+    }
+
+    navigate(`/messages/${newConv.id}`)
+  }
+
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
 
@@ -397,15 +432,24 @@ export function JobDetailPage() {
               <p className="text-sm text-neutral-700 mb-2">
                 <span className="text-neutral-500">Message:</span> {myQuote.message}
               </p>
-              {myQuote.status === 'pending' && (
+              <div className="flex gap-2 mt-3">
                 <button
-                  onClick={() => handleWithdrawQuote(myQuote.id)}
+                  onClick={() => handleStartConversation(job.customer_id)}
                   disabled={actionLoading}
-                  className="btn bg-neutral-200 text-neutral-700 hover:bg-neutral-300 transition-colors text-sm mt-3"
+                  className="btn-primary text-sm"
                 >
-                  {actionLoading ? 'Withdrawing...' : 'Withdraw'}
+                  Message Customer
                 </button>
-              )}
+                {myQuote.status === 'pending' && (
+                  <button
+                    onClick={() => handleWithdrawQuote(myQuote.id)}
+                    disabled={actionLoading}
+                    className="btn bg-neutral-200 text-neutral-700 hover:bg-neutral-300 transition-colors text-sm"
+                  >
+                    {actionLoading ? 'Withdrawing...' : 'Withdraw'}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
@@ -486,24 +530,33 @@ export function JobDetailPage() {
                         <p className="text-sm text-neutral-500 mb-1"><span className="text-neutral-400">Notes:</span> {quote.notes}</p>
                       )}
 
-                      {quote.status === 'pending' && job.status === 'open' && (
-                        <div className="flex gap-2 mt-3">
-                          <button
-                            onClick={() => setConfirmAction({ type: 'accept', quoteId: quote.id })}
-                            disabled={actionLoading}
-                            className="btn bg-green-600 text-white hover:bg-green-700 transition-colors text-sm"
-                          >
-                            Accept {quote.response_type === 'quote' ? 'Quote' : ''}
-                          </button>
-                          <button
-                            onClick={() => setConfirmAction({ type: 'reject', quoteId: quote.id })}
-                            disabled={actionLoading}
-                            className="btn bg-neutral-200 text-neutral-700 hover:bg-neutral-300 transition-colors text-sm"
-                          >
-                            Reject
-                          </button>
-                        </div>
-                      )}
+                      <div className="flex gap-2 mt-3">
+                        <button
+                          onClick={() => handleStartConversation(quote.tradie_id)}
+                          disabled={actionLoading}
+                          className="btn-primary text-sm"
+                        >
+                          Message
+                        </button>
+                        {quote.status === 'pending' && job.status === 'open' && (
+                          <>
+                            <button
+                              onClick={() => setConfirmAction({ type: 'accept', quoteId: quote.id })}
+                              disabled={actionLoading}
+                              className="btn bg-green-600 text-white hover:bg-green-700 transition-colors text-sm"
+                            >
+                              Accept {quote.response_type === 'quote' ? 'Quote' : ''}
+                            </button>
+                            <button
+                              onClick={() => setConfirmAction({ type: 'reject', quoteId: quote.id })}
+                              disabled={actionLoading}
+                              className="btn bg-neutral-200 text-neutral-700 hover:bg-neutral-300 transition-colors text-sm"
+                            >
+                              Reject
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -594,6 +647,13 @@ export function JobDetailPage() {
                   </div>
                 )}
               </div>
+              <button
+                onClick={() => handleStartConversation(job.customer_id)}
+                disabled={actionLoading}
+                className="btn-primary w-full text-sm mt-4"
+              >
+                Message Customer
+              </button>
             </div>
           )}
 

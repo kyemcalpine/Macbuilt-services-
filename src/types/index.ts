@@ -114,6 +114,72 @@ export const QUOTE_PREFERENCE_LABELS: Record<QuotePreference, string> = {
   fixed_budget: 'Fixed Budget / No Quotes',
 }
 
+export type NotificationType =
+  | 'new_quote'
+  | 'new_interest'
+  | 'quote_accepted'
+  | 'quote_rejected'
+  | 'job_assigned'
+  | 'new_message'
+  | 'job_status_changed'
+  | 'new_job_note'
+
+export interface Conversation {
+  id: string
+  job_id: string
+  customer_id: string
+  tradie_id: string
+  created_at: string
+  updated_at: string
+  job?: Pick<Job, 'id' | 'title' | 'status'>
+  customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'business_name'>
+  tradie?: Pick<Profile, 'id' | 'email' | 'full_name' | 'business_name'>
+}
+
+export interface Message {
+  id: string
+  conversation_id: string
+  sender_id: string
+  body: string
+  read_at: string | null
+  created_at: string
+  sender?: Pick<Profile, 'id' | 'email' | 'full_name' | 'role' | 'business_name'>
+}
+
+export interface AppNotification {
+  id: string
+  user_id: string
+  type: NotificationType
+  title: string
+  body: string | null
+  job_id: string | null
+  conversation_id: string | null
+  read_at: string | null
+  created_at: string
+}
+
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  'new_quote',
+  'new_interest',
+  'quote_accepted',
+  'quote_rejected',
+  'job_assigned',
+  'new_message',
+  'job_status_changed',
+  'new_job_note',
+]
+
+export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
+  new_quote: 'New Quote',
+  new_interest: 'New Interest',
+  quote_accepted: 'Quote Accepted',
+  quote_rejected: 'Quote Rejected',
+  job_assigned: 'Job Assigned',
+  new_message: 'New Message',
+  job_status_changed: 'Job Status Changed',
+  new_job_note: 'New Job Note',
+}
+
 export const AUSTRALIAN_STATES = [
   'NSW',
   'VIC',

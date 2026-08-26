@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { NotificationBell } from './NotificationBell'
 
 export function Navbar() {
   const { session, profile } = useAuth()
@@ -51,9 +52,17 @@ export function Navbar() {
               </Link>
             )}
             {session && (
+              <Link to="/messages" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
+                Messages
+              </Link>
+            )}
+            {session && (
               <Link to="/profile" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
                 Profile
               </Link>
+            )}
+            {session && (
+              <NotificationBell />
             )}
             {profile?.role === 'admin' && (
               <Link to="/admin" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
@@ -116,6 +125,9 @@ export function Navbar() {
                     My Quotes
                   </Link>
                 )}
+                <Link to="/messages" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
+                  Messages
+                </Link>
                 <Link to="/profile" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
                   Profile
                 </Link>

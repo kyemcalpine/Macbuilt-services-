@@ -18,6 +18,8 @@ import { JobCreatePage } from './pages/JobCreatePage'
 import { JobEditPage } from './pages/JobEditPage'
 import { MarketplacePage } from './pages/MarketplacePage'
 import { QuotesPage } from './pages/QuotesPage'
+import { ConversationsPage } from './pages/ConversationsPage'
+import { ConversationPage } from './pages/ConversationPage'
 import { TradieRoute } from './components/TradieRoute'
 
 export default function App() {
@@ -57,6 +59,12 @@ export default function App() {
           } />
           <Route path="/quotes" element={
             <TradieRoute><Layout><QuotesPage /></Layout></TradieRoute>
+          } />
+          <Route path="/messages" element={
+            <ProtectedRoute><Layout><ConversationsPage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/messages/:conversationId" element={
+            <ProtectedRoute><Layout><ConversationPage /></Layout></ProtectedRoute>
           } />
 
           {/* Admin routes */}

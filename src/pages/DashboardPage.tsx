@@ -18,11 +18,18 @@ interface QuoteCounts {
   withdrawn: number
 }
 
+interface DashboardExtras {
+  unreadMessages: number
+  pendingResponses: number
+  recentJobs: { id: string; title: string; status: string; updated_at: string }[]
+}
+
 export function DashboardPage() {
   const { profile } = useAuth()
   const [jobCounts, setJobCounts] = useState<JobCounts | null>(null)
   const [quoteCounts, setQuoteCounts] = useState<QuoteCounts | null>(null)
   const [availableJobs, setAvailableJobs] = useState<number | null>(null)
+  const [extras, setExtras] = useState<DashboardExtras | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -43,6 +50,54 @@ export function DashboardPage() {
           cancelled: ca.count ?? 0,
         })
       })
+
+      // Fetch unread messages and pending responses for customer
+      Promise.all([
+        supabase
+          .from('conversations')
+          .select('id')
+          .eq('customer_id', profile.id),
+        supabase
+          .from('jobs')
+          .select('id')
+          .eq('customer_id', profile.id),
+        supabase
+          .from('jobs')
+          .select('id, title, status, updated_at')
+          .eq('customer_id', profile.id)
+          .order('updated_at', { ascending: false })
+          .limit(3),
+      ]).then(async ([convResult, jobIdsResult, recentResult]) => {
+        let unreadCount = 0
+        let pendingCount = 0
+
+        if (convResult.data && convResult.data.length > 0) {
+          const convIds = convResult.data.map((c) => c.id)
+          const { count } = await supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', profile.id)
+            .is('read_at', null)
+          unreadCount = count ?? 0
+        }
+
+        if (jobIdsResult.data && jobIdsResult.data.length > 0) {
+          const jobIds = jobIdsResult.data.map((j) => j.id)
+          const { count: pending } = await supabase
+            .from('job_quotes')
+            .select('id', { count: 'exact', head: true })
+            .eq('status', 'pending')
+            .in('job_id', jobIds)
+          pendingCount = pending ?? 0
+        }
+
+        setExtras({
+          unreadMessages: unreadCount,
+          pendingResponses: pendingCount,
+          recentJobs: (recentResult.data || []) as { id: string; title: string; status: string; updated_at: string }[],
+        })
+      })
     } else if (profile.role === 'tradie' && profile.verification_status === 'approved') {
       Promise.all([
         supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'open'),
@@ -57,6 +112,28 @@ export function DashboardPage() {
           accepted: acc.count ?? 0,
           rejected: rej.count ?? 0,
           withdrawn: wd.count ?? 0,
+        })
+      })
+
+      // Fetch unread messages for tradie
+      Promise.all([
+        supabase.from('conversations').select('id').eq('tradie_id', profile.id),
+      ]).then(async ([convResult]) => {
+        let unreadCount = 0
+        if (convResult.data && convResult.data.length > 0) {
+          const convIds = convResult.data.map((c) => c.id)
+          const { count } = await supabase
+            .from('messages')
+            .select('id', { count: 'exact', head: true })
+            .in('conversation_id', convIds)
+            .neq('sender_id', profile.id)
+            .is('read_at', null)
+          unreadCount = count ?? 0
+        }
+        setExtras({
+          unreadMessages: unreadCount,
+          pendingResponses: 0,
+          recentJobs: [],
         })
       })
     }
@@ -149,6 +226,84 @@ export function DashboardPage() {
         </div>
       )}
 
+      {/* Communication summary */}
+      {extras && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-neutral-900 mb-4">Communication</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Link to="/messages" className="card p-4 hover:shadow-md transition-shadow">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center">
+                  <svg className="w-5 h-5 text-primary-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-2xl font-bold text-primary-600">{extras.unreadMessages}</p>
+                  <p className="text-sm text-neutral-500">Unread Messages</p>
+                </div>
+              </div>
+            </Link>
+            {profile.role === 'customer' && (
+              <Link to="/jobs?status=open" className="card p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-accent-600">{extras.pendingResponses}</p>
+                    <p className="text-sm text-neutral-500">Responses Awaiting Your Review</p>
+                  </div>
+                </div>
+              </Link>
+            )}
+            {profile.role === 'tradie' && quoteCounts && (
+              <Link to="/quotes?status=pending" className="card p-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-accent-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-accent-600">{quoteCounts.pending}</p>
+                    <p className="text-sm text-neutral-500">Quotes Awaiting Reply</p>
+                  </div>
+                </div>
+              </Link>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Recently updated jobs (customer) */}
+      {profile.role === 'customer' && extras && extras.recentJobs.length > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-neutral-900 mb-4">Recently Updated Jobs</h2>
+          <div className="space-y-3">
+            {extras.recentJobs.map((j) => (
+              <Link key={j.id} to={`/jobs/${j.id}`} className="card p-4 hover:shadow-md transition-shadow flex items-center justify-between">
+                <div>
+                  <p className="font-medium text-neutral-900">{j.title}</p>
+                  <p className="text-xs text-neutral-400">Updated {new Date(j.updated_at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                </div>
+                <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                  j.status === 'open' ? 'bg-blue-100 text-blue-700' :
+                  j.status === 'assigned' ? 'bg-accent-100 text-accent-700' :
+                  j.status === 'in_progress' ? 'bg-primary-100 text-primary-700' :
+                  j.status === 'completed' ? 'bg-green-100 text-green-700' :
+                  'bg-neutral-100 text-neutral-500'
+                }`}>
+                  {j.status.charAt(0).toUpperCase() + j.status.slice(1).replace('_', ' ')}
+                </span>
+              </Link>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Tradie dashboard */}
       {isApprovedTradie && quoteCounts && availableJobs !== null && (
         <div className="mb-8">
@@ -215,15 +370,15 @@ export function DashboardPage() {
             <p className="text-sm text-neutral-600">Browse open jobs and submit quotes</p>
           </Link>
         ) : (
-          <div className="card p-6">
+          <Link to="/messages" className="card p-6 hover:shadow-md transition-shadow">
             <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-4">
               <svg className="w-6 h-6 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
             <h3 className="font-semibold text-neutral-900 mb-1">Messages</h3>
-            <p className="text-sm text-neutral-600">Messaging coming soon</p>
-          </div>
+            <p className="text-sm text-neutral-600">View your conversations</p>
+          </Link>
         )}
       </div>
 
