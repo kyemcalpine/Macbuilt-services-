@@ -12,6 +12,10 @@ import { ProfilePage } from './pages/ProfilePage'
 import { DashboardPage } from './pages/DashboardPage'
 import { AdminPage } from './pages/AdminPage'
 import { AdminSetupPage } from './pages/AdminSetupPage'
+import { JobsListPage } from './pages/JobsListPage'
+import { JobDetailPage } from './pages/JobDetailPage'
+import { JobCreatePage } from './pages/JobCreatePage'
+import { JobEditPage } from './pages/JobEditPage'
 
 export default function App() {
   return (
@@ -32,6 +36,18 @@ export default function App() {
           } />
           <Route path="/profile" element={
             <ProtectedRoute><Layout><ProfilePage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/jobs" element={
+            <ProtectedRoute><Layout><JobsListPage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/jobs/new" element={
+            <ProtectedRoute><Layout><JobCreatePage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/jobs/:id" element={
+            <ProtectedRoute><Layout><JobDetailPage /></Layout></ProtectedRoute>
+          } />
+          <Route path="/jobs/:id/edit" element={
+            <ProtectedRoute><Layout><JobEditPage /></Layout></ProtectedRoute>
           } />
 
           {/* Admin routes */}

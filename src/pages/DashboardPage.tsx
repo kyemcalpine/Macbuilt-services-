@@ -1,8 +1,23 @@
 import { Link } from 'react-router-dom'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
+import { supabase } from '../lib/supabase'
 
 export function DashboardPage() {
   const { profile } = useAuth()
+  const [jobCount, setJobCount] = useState<number | null>(null)
+
+  useEffect(() => {
+    if (profile?.role === 'customer') {
+      supabase
+        .from('jobs')
+        .select('id', { count: 'exact', head: true })
+        .eq('customer_id', profile.id)
+        .then(({ count }) => setJobCount(count ?? 0))
+    } else {
+      setJobCount(null)
+    }
+  }, [profile])
 
   if (!profile) {
     return (
@@ -72,15 +87,21 @@ export function DashboardPage() {
           <p className="text-sm text-neutral-600">Update your personal and business details</p>
         </Link>
 
-        <div className="card p-6">
+        <Link to="/jobs" className="card p-6 hover:shadow-md transition-shadow">
           <div className="w-12 h-12 rounded-full bg-accent-100 flex items-center justify-center mb-4">
             <svg className="w-6 h-6 text-accent-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
           </div>
           <h3 className="font-semibold text-neutral-900 mb-1">My Jobs</h3>
-          <p className="text-sm text-neutral-600">Marketplace features coming in Stage 2</p>
-        </div>
+          <p className="text-sm text-neutral-600">
+            {profile.role === 'customer'
+              ? jobCount !== null
+                ? `${jobCount} ${jobCount === 1 ? 'job' : 'jobs'} posted`
+                : 'Loading...'
+              : 'Browse and manage jobs'}
+          </p>
+        </Link>
 
         <div className="card p-6">
           <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center mb-4">

@@ -36,6 +36,11 @@ export function Navbar() {
               </Link>
             )}
             {session && (
+              <Link to="/jobs" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
+                Jobs
+              </Link>
+            )}
+            {session && (
               <Link to="/profile" className="text-sm font-medium text-neutral-600 hover:text-primary-600 transition-colors">
                 Profile
               </Link>
@@ -87,6 +92,9 @@ export function Navbar() {
               <>
                 <Link to="/dashboard" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
                   Dashboard
+                </Link>
+                <Link to="/jobs" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
+                  Jobs
                 </Link>
                 <Link to="/profile" className="block text-sm font-medium text-neutral-600 hover:text-primary-600" onClick={() => setMenuOpen(false)}>
                   Profile

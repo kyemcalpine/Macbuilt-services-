@@ -20,6 +20,46 @@ export interface Profile {
   updated_at: string
 }
 
+export type JobStatus = 'open' | 'assigned' | 'in_progress' | 'completed' | 'cancelled'
+
+export interface Job {
+  id: string
+  customer_id: string
+  title: string
+  description: string
+  trade_category: string
+  status: JobStatus
+  budget: number | null
+  scheduled_date: string | null
+  address_line1: string | null
+  address_line2: string | null
+  suburb: string | null
+  state: string | null
+  postcode: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+  customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'state' | 'suburb' | 'postcode'>
+}
+
+export const JOB_STATUSES: JobStatus[] = ['open', 'assigned', 'in_progress', 'completed', 'cancelled']
+
+export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
+  open: 'Open',
+  assigned: 'Assigned',
+  in_progress: 'In Progress',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+}
+
+export const VALID_STATUS_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
+  open: ['assigned', 'cancelled'],
+  assigned: ['in_progress', 'cancelled'],
+  in_progress: ['completed', 'cancelled'],
+  completed: [],
+  cancelled: [],
+}
+
 export const AUSTRALIAN_STATES = [
   'NSW',
   'VIC',
