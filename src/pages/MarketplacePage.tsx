@@ -6,6 +6,8 @@ import { JobStatusBadge } from '../components/JobStatusBadge'
 import type { Job } from '../types'
 import { TRADE_CATEGORIES, QUOTE_PREFERENCE_LABELS } from '../types'
 
+const PAGE_SIZE = 12
+
 interface JobWithQuoteCount extends Job {
   quote_count: number
 }
@@ -17,6 +19,7 @@ export function MarketplacePage() {
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
   const [categoryFilter, setCategoryFilter] = useState('all')
+  const [hasMore, setHasMore] = useState(false)
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
@@ -32,6 +35,7 @@ export function MarketplacePage() {
       `)
       .eq('status', 'open')
       .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE)
 
     if (categoryFilter !== 'all') {
       query = query.eq('trade_category', categoryFilter)
@@ -61,12 +65,60 @@ export function MarketplacePage() {
     )
 
     setJobs(jobsWithCounts)
+    setHasMore(jobsData.length === PAGE_SIZE)
     setLoading(false)
   }, [categoryFilter])
 
   useEffect(() => {
     fetchJobs()
   }, [fetchJobs])
+
+  const loadMore = async () => {
+    if (jobs.length === 0) return
+    setLoading(true)
+
+    let query = supabase
+      .from('jobs')
+      .select(`
+        *,
+        customer:profiles!jobs_customer_id_fkey (
+          id, email, full_name, phone, state, suburb, postcode
+        )
+      `)
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .range(jobs.length, jobs.length + PAGE_SIZE - 1)
+
+    if (categoryFilter !== 'all') {
+      query = query.eq('trade_category', categoryFilter)
+    }
+
+    const { data, error: fetchError } = await query
+
+    if (fetchError) {
+      setError('Could not load more jobs.')
+      setLoading(false)
+      return
+    }
+
+    const jobsData = (data || []) as Job[]
+
+    const jobsWithCounts: JobWithQuoteCount[] = await Promise.all(
+      jobsData.map(async (job) => {
+        const { count } = await supabase
+          .from('job_quotes')
+          .select('id', { count: 'exact', head: true })
+          .eq('job_id', job.id)
+          .neq('status', 'withdrawn')
+
+        return { ...job, quote_count: count ?? 0 }
+      })
+    )
+
+    setJobs((prev) => [...prev, ...jobsWithCounts])
+    setHasMore(jobsData.length === PAGE_SIZE)
+    setLoading(false)
+  }
 
   const filteredJobs = search.trim()
     ? jobs.filter(
@@ -127,6 +179,7 @@ export function MarketplacePage() {
           </p>
         </div>
       ) : (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredJobs.map((job) => (
             <Link key={job.id} to={`/jobs/${job.id}`} className="card p-6 hover:shadow-md transition-shadow flex flex-col">
@@ -194,6 +247,18 @@ export function MarketplacePage() {
             </Link>
           ))}
         </div>
+          {hasMore && (
+            <div className="flex justify-center mt-8">
+              <button
+                onClick={loadMore}
+                disabled={loading}
+                className="btn-secondary"
+              >
+                {loading ? 'Loading...' : 'Load More'}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

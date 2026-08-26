@@ -55,13 +55,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
-      // TEMPORARY DIAGNOSTIC LOGGING
-      console.warn('[DIAG] onAuthStateChange', {
-        event,
-        hasSession: !!newSession,
-        timestamp: new Date().toISOString(),
-        hash: window.location.hash,
-      })
       // Ignore INITIAL_SESSION — getSession already handles initial load.
       // This prevents a race where INITIAL_SESSION fires with null before
       // the persisted session is restored, causing a false redirect to /signin.

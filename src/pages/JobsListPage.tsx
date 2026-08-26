@@ -6,6 +6,8 @@ import { JobStatusBadge } from '../components/JobStatusBadge'
 import type { Job, JobStatus } from '../types'
 import { JOB_STATUSES, JOB_STATUS_LABELS } from '../types'
 
+const PAGE_SIZE = 12
+
 type StatusFilter = JobStatus | 'all'
 
 export function JobsListPage() {
@@ -15,6 +17,7 @@ export function JobsListPage() {
   const [error, setError] = useState('')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [search, setSearch] = useState('')
+  const [hasMore, setHasMore] = useState(false)
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
@@ -29,6 +32,7 @@ export function JobsListPage() {
         )
       `)
       .order('created_at', { ascending: false })
+      .limit(PAGE_SIZE)
 
     if (statusFilter !== 'all') {
       query = query.eq('status', statusFilter)
@@ -43,6 +47,7 @@ export function JobsListPage() {
     }
 
     setJobs((data || []) as Job[])
+    setHasMore((data || []).length === PAGE_SIZE)
     setLoading(false)
   }, [statusFilter])
 
@@ -58,6 +63,38 @@ export function JobsListPage() {
           (j.suburb || '').toLowerCase().includes(search.toLowerCase())
       )
     : jobs
+
+  const loadMore = async () => {
+    if (jobs.length === 0) return
+    setLoading(true)
+
+    let query = supabase
+      .from('jobs')
+      .select(`
+        *,
+        customer:profiles!jobs_customer_id_fkey (
+          id, email, full_name, phone, state, suburb, postcode
+        )
+      `)
+      .order('created_at', { ascending: false })
+      .range(jobs.length, jobs.length + PAGE_SIZE - 1)
+
+    if (statusFilter !== 'all') {
+      query = query.eq('status', statusFilter)
+    }
+
+    const { data, error: fetchError } = await query
+
+    if (fetchError) {
+      setError('Could not load more jobs.')
+      setLoading(false)
+      return
+    }
+
+    setJobs((prev) => [...prev, ...((data || []) as Job[])])
+    setHasMore((data || []).length === PAGE_SIZE)
+    setLoading(false)
+  }
 
   const formatDate = (dateStr: string) =>
     new Date(dateStr).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -140,58 +177,71 @@ export function JobsListPage() {
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredJobs.map((job) => (
-            <Link key={job.id} to={`/jobs/${job.id}`} className="card p-6 hover:shadow-md transition-shadow flex flex-col">
-              <div className="flex items-start justify-between gap-3 mb-3">
-                <h3 className="font-semibold text-neutral-900 line-clamp-2">{job.title}</h3>
-                <JobStatusBadge status={job.status} />
-              </div>
-              <p className="text-sm text-neutral-600 line-clamp-2 mb-4">{job.description}</p>
-              <div className="space-y-1.5 text-sm text-neutral-500 mt-auto">
-                <div className="flex items-center gap-2">
-                  <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
-                  </svg>
-                  <span>{job.trade_category}</span>
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {filteredJobs.map((job) => (
+              <Link key={job.id} to={`/jobs/${job.id}`} className="card p-6 hover:shadow-md transition-shadow flex flex-col">
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <h3 className="font-semibold text-neutral-900 line-clamp-2">{job.title}</h3>
+                  <JobStatusBadge status={job.status} />
                 </div>
-                {job.suburb && (
+                <p className="text-sm text-neutral-600 line-clamp-2 mb-4">{job.description}</p>
+                <div className="space-y-1.5 text-sm text-neutral-500 mt-auto">
                   <div className="flex items-center gap-2">
                     <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
                     </svg>
-                    <span>{job.suburb}{job.state ? `, ${job.state}` : ''}</span>
+                    <span>{job.trade_category}</span>
                   </div>
-                )}
-                {job.scheduled_date && (
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <span>{formatDate(job.scheduled_date)}</span>
-                  </div>
-                )}
-                {job.budget != null && (
-                  <div className="flex items-center gap-2">
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    <span className="font-medium text-neutral-700">{formatBudget(job.budget)}</span>
-                  </div>
-                )}
-                {job.customer && profile.role === 'admin' && (
-                  <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
-                    <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                    <span>{job.customer.full_name || job.customer.email}</span>
-                  </div>
-                )}
-              </div>
-            </Link>
-          ))}
-        </div>
+                  {job.suburb && (
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                      </svg>
+                      <span>{job.suburb}{job.state ? `, ${job.state}` : ''}</span>
+                    </div>
+                  )}
+                  {job.scheduled_date && (
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      <span>{formatDate(job.scheduled_date)}</span>
+                    </div>
+                  )}
+                  {job.budget != null && (
+                    <div className="flex items-center gap-2">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="font-medium text-neutral-700">{formatBudget(job.budget)}</span>
+                    </div>
+                  )}
+                  {job.customer && profile.role === 'admin' && (
+                    <div className="flex items-center gap-2 pt-2 border-t border-neutral-100">
+                      <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                      </svg>
+                      <span>{job.customer.full_name || job.customer.email}</span>
+                    </div>
+                  )}
+                </div>
+              </Link>
+            ))}
+          </div>
+          {hasMore && (
+            <div className="flex justify-center mt-8">
+              <button
+                onClick={loadMore}
+                disabled={loading}
+                className="btn-secondary"
+              >
+                {loading ? 'Loading...' : 'Load More'}
+              </button>
+            </div>
+          )}
+        </>
       )}
     </div>
   )

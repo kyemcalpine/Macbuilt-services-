@@ -21,6 +21,7 @@ import { QuotesPage } from './pages/QuotesPage'
 import { ConversationsPage } from './pages/ConversationsPage'
 import { ConversationPage } from './pages/ConversationPage'
 import { TradieRoute } from './components/TradieRoute'
+import { NotFoundPage } from './pages/NotFoundPage'
 
 export default function App() {
   return (
@@ -76,7 +77,7 @@ export default function App() {
           } />
 
           {/* Fallback */}
-          <Route path="*" element={<Layout><HomePage /></Layout>} />
+          <Route path="*" element={<Layout><NotFoundPage /></Layout>} />
         </Routes>
       </HashRouter>
     </AuthProvider>

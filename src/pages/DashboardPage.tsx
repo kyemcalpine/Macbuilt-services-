@@ -162,7 +162,8 @@ export function DashboardPage() {
       {profile.role === 'tradie' && profile.verification_status === 'pending' && (
         <div className="alert-info mb-8">
           <p className="font-medium mb-1">Your tradie account is pending approval.</p>
-          <p>An administrator needs to approve your account before you can submit quotes on jobs. You'll be notified once approved.</p>
+          <p className="mb-2">An administrator reviews new tradie accounts to verify credentials. This usually happens within 1-2 business days. You'll receive a notification when your account is approved.</p>
+          <p>Once approved, you can browse the marketplace, submit quotes on open jobs, and start conversations with customers.</p>
         </div>
       )}
       {profile.role === 'tradie' && profile.verification_status === 'rejected' && (

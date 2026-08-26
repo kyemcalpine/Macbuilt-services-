@@ -9,8 +9,25 @@ const statusStyles: Record<JobStatus, string> = {
   cancelled: 'bg-neutral-200 text-neutral-600',
 }
 
-export function JobStatusBadge({ status, size = 'sm' }: { status: JobStatus; size?: 'sm' | 'md' }) {
+interface JobStatusBadgeProps {
+  status: JobStatus
+  size?: 'sm' | 'md'
+  awaitingConfirmation?: boolean
+}
+
+export function JobStatusBadge({ status, size = 'sm', awaitingConfirmation = false }: JobStatusBadgeProps) {
   const sizeClasses = size === 'md' ? 'px-3 py-1 text-sm' : 'px-2.5 py-0.5 text-xs'
+
+  if (awaitingConfirmation) {
+    return (
+      <span
+        className={`inline-flex items-center rounded-full font-medium ${sizeClasses} bg-amber-100 text-amber-700`}
+      >
+        Awaiting Confirmation
+      </span>
+    )
+  }
+
   return (
     <span
       className={`inline-flex items-center rounded-full font-medium ${sizeClasses} ${statusStyles[status]}`}

@@ -108,6 +108,45 @@ export function JobDetailPage() {
     fetchJob()
   }
 
+  const handleTradieStatusChange = async (newStatus: JobStatus) => {
+    if (!job) return
+    setActionLoading(true)
+    setActionError('')
+
+    const { error: rpcError } = await supabase.rpc('tradie_update_job_status', {
+      p_job_id: job.id,
+      p_new_status: newStatus,
+    })
+
+    if (rpcError) {
+      setActionError(rpcError.message || 'Could not update job status.')
+      setActionLoading(false)
+      return
+    }
+
+    setActionLoading(false)
+    fetchJob()
+  }
+
+  const handleConfirmCompletion = async () => {
+    if (!job) return
+    setActionLoading(true)
+    setActionError('')
+
+    const { error: rpcError } = await supabase.rpc('confirm_job_completion', {
+      p_job_id: job.id,
+    })
+
+    if (rpcError) {
+      setActionError(rpcError.message || 'Could not confirm completion.')
+      setActionLoading(false)
+      return
+    }
+
+    setActionLoading(false)
+    fetchJob()
+  }
+
   const handleDelete = async () => {
     if (!job) return
     setActionLoading(true)
@@ -265,6 +304,11 @@ export function JobDetailPage() {
   const possibleTransitions = VALID_STATUS_TRANSITIONS[job.status] || []
   const pendingQuotes = quotes.filter((q) => q.status === 'pending')
 
+  const awaitingConfirmation =
+    job.status === 'completed' &&
+    job.tradie_completed_at !== null &&
+    job.customer_confirmed_at === null
+
   const fullAddress = [
     job.address_line1,
     job.address_line2,
@@ -296,7 +340,7 @@ export function JobDetailPage() {
         <div>
           <div className="flex items-center gap-3 mb-2">
             <h1 className="text-3xl font-bold text-neutral-900">{job.title}</h1>
-            <JobStatusBadge status={job.status} size="md" />
+            <JobStatusBadge status={job.status} size="md" awaitingConfirmation={awaitingConfirmation} />
           </div>
           <p className="text-neutral-600">{job.trade_category}</p>
           <div className="mt-2">
@@ -580,8 +624,18 @@ export function JobDetailPage() {
             <h3 className="font-semibold text-neutral-900 mb-4">Status</h3>
             <div className="flex items-center gap-2 mb-4">
               <span className="text-sm text-neutral-500">Current:</span>
-              <JobStatusBadge status={job.status} size="md" />
+              <JobStatusBadge status={job.status} size="md" awaitingConfirmation={awaitingConfirmation} />
             </div>
+            {awaitingConfirmation && (
+              <p className="text-sm text-amber-600 mb-2">
+                The tradie has marked this job complete. Please confirm the work is finished.
+              </p>
+            )}
+            {job.status === 'completed' && job.customer_confirmed_at !== null && (
+              <p className="text-sm text-green-600 mb-2">
+                Completion confirmed on {formatDateTime(job.customer_confirmed_at)}.
+              </p>
+            )}
             <p className="text-xs text-neutral-400 mb-2">
               Last updated: {formatDateTime(job.updated_at)}
             </p>
@@ -686,7 +740,51 @@ export function JobDetailPage() {
             </div>
           )}
 
-          {/* Status actions */}
+          {/* Tradie status actions */}
+          {isAssignedTradie && job.status === 'assigned' && (
+            <div className="card p-6">
+              <h3 className="font-semibold text-neutral-900 mb-4">Update Status</h3>
+              <button
+                onClick={() => handleTradieStatusChange('in_progress')}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium btn-secondary"
+              >
+                {actionLoading ? 'Updating...' : 'Start Work'}
+              </button>
+            </div>
+          )}
+
+          {isAssignedTradie && job.status === 'in_progress' && (
+            <div className="card p-6">
+              <h3 className="font-semibold text-neutral-900 mb-4">Update Status</h3>
+              <button
+                onClick={() => handleTradieStatusChange('completed')}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                {actionLoading ? 'Updating...' : 'Mark as Completed'}
+              </button>
+            </div>
+          )}
+
+          {/* Customer confirm completion */}
+          {isOwner && awaitingConfirmation && (
+            <div className="card p-6 border-amber-200">
+              <h3 className="font-semibold text-neutral-900 mb-2">Confirm Completion</h3>
+              <p className="text-sm text-neutral-600 mb-4">
+                The tradie has marked this job as complete. Please confirm the work is finished.
+              </p>
+              <button
+                onClick={handleConfirmCompletion}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                {actionLoading ? 'Confirming...' : 'Confirm Completion'}
+              </button>
+            </div>
+          )}
+
+          {/* Customer status actions (existing) */}
           {canManage && possibleTransitions.length > 0 && (
             <div className="card p-6">
               <h3 className="font-semibold text-neutral-900 mb-4">Update Status</h3>

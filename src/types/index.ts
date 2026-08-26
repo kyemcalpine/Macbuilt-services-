@@ -45,6 +45,8 @@ export interface Job {
   state: string | null
   postcode: string | null
   notes: string | null
+  tradie_completed_at: string | null
+  customer_confirmed_at: string | null
   created_at: string
   updated_at: string
   customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'state' | 'suburb' | 'postcode'>
@@ -123,6 +125,7 @@ export type NotificationType =
   | 'new_message'
   | 'job_status_changed'
   | 'new_job_note'
+  | 'job_completion_confirmed'
 
 export interface Conversation {
   id: string
@@ -167,6 +170,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'new_message',
   'job_status_changed',
   'new_job_note',
+  'job_completion_confirmed',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -178,6 +182,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   new_message: 'New Message',
   job_status_changed: 'Job Status Changed',
   new_job_note: 'New Job Note',
+  job_completion_confirmed: 'Completion Confirmed',
 }
 
 export const AUSTRALIAN_STATES = [
