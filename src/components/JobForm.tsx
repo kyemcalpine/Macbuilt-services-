@@ -1,9 +1,11 @@
-import { useState, FormEvent } from 'react'
+import { useState, FormEvent, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { AUSTRALIAN_STATES, TRADE_CATEGORIES } from '../types'
-import type { Job, QuotePreference } from '../types'
+import type { Job, QuotePreference, JobAttachment } from '../types'
+import { PhotoUploader } from './PhotoUploader'
+import { PhotoGallery } from './PhotoGallery'
 
 interface JobFormProps {
   job?: Job
@@ -47,6 +49,33 @@ export function JobForm({ job }: JobFormProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<keyof FormData, string>>>({})
+  const [attachments, setAttachments] = useState<JobAttachment[]>([])
+
+  const fetchAttachments = async () => {
+    if (!job) return
+    const { data } = await supabase
+      .from('job_attachments')
+      .select(`
+        *,
+        uploader:profiles!job_attachments_uploaded_by_fkey (
+          id, full_name, email, role
+        )
+      `)
+      .eq('job_id', job.id)
+      .order('created_at', { ascending: true })
+    if (data) setAttachments(data as JobAttachment[])
+  }
+
+  const handleDeleteAttachment = async (attachmentId: string, storagePath: string) => {
+    const { error: rpcError } = await supabase.rpc('delete_job_attachment', { p_attachment_id: attachmentId })
+    if (rpcError) return
+    await supabase.storage.from('job-attachments').remove([storagePath])
+    fetchAttachments()
+  }
+
+  useEffect(() => {
+    fetchAttachments()
+  }, [job?.id])
 
   const update = (field: keyof FormData, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }))
@@ -351,6 +380,28 @@ export function JobForm({ job }: JobFormProps) {
           />
         </div>
       </div>
+
+      {isEdit && job && job.status === 'open' && (
+        <div className="card p-6 space-y-4">
+          <h3 className="font-semibold text-neutral-900">Job Photos</h3>
+          <p className="text-sm text-neutral-600">
+            Upload photos so tradies can see the problem before submitting a quote.
+          </p>
+          {attachments.length > 0 && (
+            <PhotoGallery
+              attachments={attachments}
+              currentUserId={profile.id}
+              onDelete={handleDeleteAttachment}
+            />
+          )}
+          <PhotoUploader
+            jobId={job.id}
+            attachmentType="job_photo"
+            onUploaded={fetchAttachments}
+            label="Add Job Photos"
+          />
+        </div>
+      )}
 
       <div className="flex gap-4">
         <button type="submit" disabled={loading} className="btn-primary flex-1">

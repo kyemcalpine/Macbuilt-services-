@@ -116,6 +116,33 @@ export const QUOTE_PREFERENCE_LABELS: Record<QuotePreference, string> = {
   fixed_budget: 'Fixed Budget / No Quotes',
 }
 
+export type AttachmentType = 'job_photo' | 'progress_photo' | 'completion_photo' | 'additional_photo'
+
+export interface JobAttachment {
+  id: string
+  job_id: string
+  uploaded_by: string
+  attachment_type: AttachmentType
+  storage_path: string
+  file_name: string
+  mime_type: string
+  file_size: number
+  caption: string | null
+  created_at: string
+  uploader?: Pick<Profile, 'id' | 'full_name' | 'email' | 'role'>
+}
+
+export const ATTACHMENT_TYPE_LABELS: Record<AttachmentType, string> = {
+  job_photo: 'Job Photos',
+  progress_photo: 'Progress Photos',
+  completion_photo: 'Completion Photos',
+  additional_photo: 'Additional Photos',
+}
+
+export const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const
+
+export const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10 MB
+
 export type NotificationType =
   | 'new_quote'
   | 'new_interest'
@@ -127,6 +154,7 @@ export type NotificationType =
   | 'new_job_note'
   | 'job_completion_confirmed'
   | 'new_review'
+  | 'new_job_attachment'
 
 export interface JobReview {
   id: string
@@ -187,6 +215,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'new_job_note',
   'job_completion_confirmed',
   'new_review',
+  'new_job_attachment',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -200,6 +229,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   new_job_note: 'New Job Note',
   job_completion_confirmed: 'Completion Confirmed',
   new_review: 'New Review',
+  new_job_attachment: 'New Photo',
 }
 
 export const STAR_RATINGS = [1, 2, 3, 4, 5] as const

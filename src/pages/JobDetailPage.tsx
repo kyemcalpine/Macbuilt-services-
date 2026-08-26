@@ -9,7 +9,9 @@ import { JobNotesSection } from '../components/JobNotesSection'
 import { StarRating } from '../components/StarRating'
 import { ReviewForm } from '../components/ReviewForm'
 import { ReviewCard } from '../components/ReviewCard'
-import type { Job, JobQuote, JobReview, JobStatus, ResponseType } from '../types'
+import { PhotoUploader } from '../components/PhotoUploader'
+import { PhotoGallery } from '../components/PhotoGallery'
+import type { Job, JobQuote, JobReview, JobStatus, ResponseType, JobAttachment } from '../types'
 import { JOB_STATUS_LABELS, VALID_STATUS_TRANSITIONS, QUOTE_PREFERENCE_LABELS, RESPONSE_TYPE_LABELS } from '../types'
 
 export function JobDetailPage() {
@@ -29,6 +31,7 @@ export function JobDetailPage() {
   const [reviews, setReviews] = useState<JobReview[]>([])
   const [showReviewForm, setShowReviewForm] = useState(false)
   const [tradieRatings, setTradieRatings] = useState<Record<string, { average: number; count: number }>>({})
+  const [attachments, setAttachments] = useState<JobAttachment[]>([])
 
   const fetchJob = useCallback(async () => {
     setLoading(true)
@@ -151,6 +154,35 @@ export function JobDetailPage() {
   useEffect(() => {
     fetchTradieRatings()
   }, [fetchTradieRatings])
+
+  const fetchAttachments = useCallback(async () => {
+    if (!id) return
+    const { data } = await supabase
+      .from('job_attachments')
+      .select(`
+        *,
+        uploader:profiles!job_attachments_uploaded_by_fkey (
+          id, full_name, email, role
+        )
+      `)
+      .eq('job_id', id)
+      .order('created_at', { ascending: true })
+    if (data) setAttachments(data as JobAttachment[])
+  }, [id])
+
+  useEffect(() => {
+    fetchAttachments()
+  }, [fetchAttachments])
+
+  const handleDeleteAttachment = async (attachmentId: string, storagePath: string) => {
+    const { error: rpcError } = await supabase.rpc('delete_job_attachment', { p_attachment_id: attachmentId })
+    if (rpcError) {
+      setActionError(rpcError.message || 'Could not delete photo.')
+      return
+    }
+    await supabase.storage.from('job-attachments').remove([storagePath])
+    fetchAttachments()
+  }
 
   const handleStatusChange = async (newStatus: JobStatus) => {
     if (!job) return
@@ -500,6 +532,65 @@ export function JobDetailPage() {
           )}
 
           {/* Tradie quote / interest actions */}
+          {/* Photos section */}
+          {(isOwner || isAssignedTradie || isAdmin) && attachments.length > 0 && (
+            <div className="card p-6">
+              <h3 className="font-semibold text-neutral-900 mb-4">Photos</h3>
+              <PhotoGallery
+                attachments={attachments}
+                currentUserId={profile?.id || ''}
+                onDelete={handleDeleteAttachment}
+              />
+            </div>
+          )}
+
+          {/* Photo uploaders — role and status based */}
+          {(isOwner || isAssignedTradie) && job.status !== 'cancelled' && (
+            <div className="card p-6 space-y-6">
+              <h3 className="font-semibold text-neutral-900">Upload Photos</h3>
+
+              {/* Customer: job photos while open */}
+              {isOwner && job.status === 'open' && (
+                <PhotoUploader
+                  jobId={job.id}
+                  attachmentType="job_photo"
+                  onUploaded={fetchAttachments}
+                  label="Job Photos — show tradies the problem"
+                />
+              )}
+
+              {/* Tradie: progress photos while in_progress */}
+              {isAssignedTradie && job.status === 'in_progress' && (
+                <PhotoUploader
+                  jobId={job.id}
+                  attachmentType="progress_photo"
+                  onUploaded={fetchAttachments}
+                  label="Progress Photos"
+                />
+              )}
+
+              {/* Tradie: completion photos after marking complete */}
+              {isAssignedTradie && job.status === 'completed' && job.tradie_completed_at !== null && (
+                <PhotoUploader
+                  jobId={job.id}
+                  attachmentType="completion_photo"
+                  onUploaded={fetchAttachments}
+                  label="Completion Photos"
+                />
+              )}
+
+              {/* Both: additional photos while job is active */}
+              {(isOwner || isAssignedTradie) && job.status !== 'open' && (
+                <PhotoUploader
+                  jobId={job.id}
+                  attachmentType="additional_photo"
+                  onUploaded={fetchAttachments}
+                  label="Additional Photos"
+                />
+              )}
+            </div>
+          )}
+
           {canSubmitResponse && !showQuoteForm && (
             <div className="card p-6">
               <h3 className="font-semibold text-neutral-900 mb-2">
@@ -1020,3 +1111,5 @@ export function JobDetailPage() {
     </div>
   )
 }
+
+export { JobDetailPage }
