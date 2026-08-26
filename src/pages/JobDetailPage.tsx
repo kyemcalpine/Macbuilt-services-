@@ -12,6 +12,8 @@ import { ReviewCard } from '../components/ReviewCard'
 import { PhotoUploader } from '../components/PhotoUploader'
 import { PhotoGallery } from '../components/PhotoGallery'
 import { JobActivityTimeline } from '../components/JobActivityTimeline'
+import { PaymentSection } from '../components/PaymentSection'
+import { DisputeSection } from '../components/DisputeSection'
 import { useJobActivity } from '../hooks/useJobActivity'
 import type { Job, JobQuote, JobReview, JobStatus, ResponseType, JobAttachment } from '../types'
 import { JOB_STATUS_LABELS, VALID_STATUS_TRANSITIONS, QUOTE_PREFERENCE_LABELS, RESPONSE_TYPE_LABELS } from '../types'
@@ -1074,6 +1076,16 @@ export function JobDetailPage() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* Payment section */}
+          {(isOwner || isAssignedTradie || isAdmin) && (
+            <PaymentSection job={job} onJobUpdated={fetchJob} />
+          )}
+
+          {/* Dispute section */}
+          {(isOwner || isAssignedTradie || isAdmin) && (
+            <DisputeSection job={job} />
           )}
 
           {/* Tradie status actions */}

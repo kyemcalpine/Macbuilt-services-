@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom'
 import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
+import { TradiePayoutSetup } from '../components/TradiePayoutSetup'
 
 interface JobCounts {
   open: number
@@ -29,6 +30,13 @@ interface TradieRating {
   count: number
 }
 
+interface PaymentSummary {
+  totalSpent: number
+  totalEarned: number
+  pendingPayouts: number
+  pendingPayoutCount: number
+}
+
 export function DashboardPage() {
   const { profile } = useAuth()
   const [jobCounts, setJobCounts] = useState<JobCounts | null>(null)
@@ -36,6 +44,7 @@ export function DashboardPage() {
   const [availableJobs, setAvailableJobs] = useState<number | null>(null)
   const [extras, setExtras] = useState<DashboardExtras | null>(null)
   const [tradieRating, setTradieRating] = useState<TradieRating | null>(null)
+  const [paymentSummary, setPaymentSummary] = useState<PaymentSummary | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -104,6 +113,24 @@ export function DashboardPage() {
           recentJobs: (recentResult.data || []) as { id: string; title: string; status: string; updated_at: string }[],
         })
       })
+
+      // Fetch customer payment summary
+      supabase
+        .from('transactions')
+        .select('type, gross_amount, status')
+        .eq('customer_id', profile.id)
+        .eq('type', 'payment')
+        .eq('status', 'succeeded')
+        .then(({ data }) => {
+          if (data) {
+            setPaymentSummary({
+              totalSpent: data.reduce((s, t) => s + t.gross_amount, 0),
+              totalEarned: 0,
+              pendingPayouts: 0,
+              pendingPayoutCount: 0,
+            })
+          }
+        })
     } else if (profile.role === 'tradie' && profile.verification_status === 'approved') {
       Promise.all([
         supabase.from('jobs').select('id', { count: 'exact', head: true }).eq('status', 'open'),
@@ -152,6 +179,24 @@ export function DashboardPage() {
           if (data && data.length > 0) {
             const sum = data.reduce((acc, r) => acc + r.rating, 0)
             setTradieRating({ average: sum / data.length, count: data.length })
+          }
+        })
+
+      // Fetch tradie earnings summary
+      supabase
+        .from('transactions')
+        .select('type, gross_amount, net_amount, status')
+        .eq('tradie_id', profile.id)
+        .then(({ data }) => {
+          if (data) {
+            const earned = data.filter((t) => t.type === 'payout' && t.status === 'payout_succeeded')
+            const pending = data.filter((t) => t.type === 'payout' && t.status === 'payout_pending')
+            setPaymentSummary({
+              totalSpent: 0,
+              totalEarned: earned.reduce((s, t) => s + t.net_amount, 0),
+              pendingPayouts: pending.reduce((s, t) => s + t.net_amount, 0),
+              pendingPayoutCount: pending.length,
+            })
           }
         })
     }
@@ -348,6 +393,45 @@ export function DashboardPage() {
               <p className="text-2xl font-bold text-neutral-300">{quoteCounts.withdrawn}</p>
               <p className="text-sm text-neutral-500">Withdrawn</p>
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Tradie earnings summary */}
+      {isApprovedTradie && paymentSummary && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-neutral-900 mb-4">Earnings</h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="card p-4">
+              <p className="text-2xl font-bold text-green-600">
+                ${paymentSummary.totalEarned.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-sm text-neutral-500">Total Earnings (Paid Out)</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-2xl font-bold text-amber-600">
+                ${paymentSummary.pendingPayouts.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+              <p className="text-sm text-neutral-500">
+                Pending Payouts{paymentSummary.pendingPayoutCount > 0 ? ` (${paymentSummary.pendingPayoutCount})` : ''}
+              </p>
+            </div>
+          </div>
+          <div className="mt-4">
+            <TradiePayoutSetup />
+          </div>
+        </div>
+      )}
+
+      {/* Customer payments summary */}
+      {profile.role === 'customer' && paymentSummary && paymentSummary.totalSpent > 0 && (
+        <div className="mb-8">
+          <h2 className="text-xl font-semibold text-neutral-900 mb-4">Payments</h2>
+          <div className="card p-4">
+            <p className="text-2xl font-bold text-blue-600">
+              ${paymentSummary.totalSpent.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </p>
+            <p className="text-sm text-neutral-500">Total Spent on Jobs</p>
           </div>
         </div>
       )}

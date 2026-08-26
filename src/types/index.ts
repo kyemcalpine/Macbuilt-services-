@@ -16,6 +16,7 @@ export interface Profile {
   trade_category: string | null
   service_areas: string[] | null
   verification_status: VerificationStatus
+  stripe_account_id: string | null
   created_at: string
   updated_at: string
 }
@@ -27,6 +28,16 @@ export type QuotePreference = 'open_to_quotes' | 'fixed_budget'
 export type ResponseType = 'quote' | 'interest'
 
 export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn'
+
+export type PaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'partially_refunded' | 'disputed'
+
+export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  unpaid: 'Unpaid',
+  paid: 'Paid',
+  refunded: 'Refunded',
+  partially_refunded: 'Partially Refunded',
+  disputed: 'Disputed',
+}
 
 export interface Job {
   id: string
@@ -47,6 +58,9 @@ export interface Job {
   notes: string | null
   tradie_completed_at: string | null
   customer_confirmed_at: string | null
+  agreed_quote_amount: number | null
+  payment_status: PaymentStatus
+  stripe_payment_intent_id: string | null
   created_at: string
   updated_at: string
   customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'state' | 'suburb' | 'postcode'>
@@ -155,6 +169,13 @@ export type NotificationType =
   | 'job_completion_confirmed'
   | 'new_review'
   | 'new_job_attachment'
+  | 'payment_required'
+  | 'payment_received'
+  | 'payment_failed'
+  | 'refund_processed'
+  | 'payout_processed'
+  | 'dispute_raised'
+  | 'dispute_resolved'
 
 export interface JobReview {
   id: string
@@ -216,6 +237,13 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'job_completion_confirmed',
   'new_review',
   'new_job_attachment',
+  'payment_required',
+  'payment_received',
+  'payment_failed',
+  'refund_processed',
+  'payout_processed',
+  'dispute_raised',
+  'dispute_resolved',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -230,6 +258,13 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   job_completion_confirmed: 'Completion Confirmed',
   new_review: 'New Review',
   new_job_attachment: 'New Photo',
+  payment_required: 'Payment Required',
+  payment_received: 'Payment Received',
+  payment_failed: 'Payment Failed',
+  refund_processed: 'Refund Processed',
+  payout_processed: 'Payout Sent',
+  dispute_raised: 'Dispute Raised',
+  dispute_resolved: 'Dispute Resolved',
 }
 
 export type ActivityType =
@@ -246,6 +281,13 @@ export type ActivityType =
   | 'review_submitted'
   | 'completion_requested'
   | 'completion_confirmed'
+  | 'payment_initiated'
+  | 'payment_received'
+  | 'payment_failed'
+  | 'refund_processed'
+  | 'payout_processed'
+  | 'dispute_raised'
+  | 'dispute_resolved'
 
 export interface JobActivity {
   id: string
@@ -272,6 +314,13 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   review_submitted: 'Review Submitted',
   completion_requested: 'Completion Requested',
   completion_confirmed: 'Completion Confirmed',
+  payment_initiated: 'Payment Initiated',
+  payment_received: 'Payment Received',
+  payment_failed: 'Payment Failed',
+  refund_processed: 'Refund Processed',
+  payout_processed: 'Payout Sent',
+  dispute_raised: 'Dispute Raised',
+  dispute_resolved: 'Dispute Resolved',
 }
 
 export const STAR_RATINGS = [1, 2, 3, 4, 5] as const
@@ -309,3 +358,92 @@ export const TRADE_CATEGORIES = [
   'Property Maintenance',
   'Other Services',
 ] as const
+
+export type TransactionType = 'payment' | 'refund' | 'payout'
+
+export type TransactionStatus =
+  | 'pending'
+  | 'requires_payment'
+  | 'succeeded'
+  | 'failed'
+  | 'refunded'
+  | 'partially_refunded'
+  | 'disputed'
+  | 'payout_pending'
+  | 'payout_succeeded'
+  | 'payout_failed'
+
+export interface Transaction {
+  id: string
+  job_id: string
+  customer_id: string
+  tradie_id: string | null
+  type: TransactionType
+  gross_amount: number
+  platform_fee: number
+  net_amount: number
+  stripe_payment_intent_id: string | null
+  stripe_transfer_id: string | null
+  stripe_refund_id: string | null
+  status: TransactionStatus
+  failure_reason: string | null
+  metadata: Record<string, unknown> | null
+  created_at: string
+  updated_at: string
+  job?: Pick<Job, 'id' | 'title'>
+  customer?: Pick<Profile, 'id' | 'email' | 'full_name'>
+  tradie?: Pick<Profile, 'id' | 'email' | 'full_name' | 'business_name'>
+}
+
+export const TRANSACTION_TYPE_LABELS: Record<TransactionType, string> = {
+  payment: 'Payment',
+  refund: 'Refund',
+  payout: 'Payout',
+}
+
+export const TRANSACTION_STATUS_LABELS: Record<TransactionStatus, string> = {
+  pending: 'Pending',
+  requires_payment: 'Awaiting Payment',
+  succeeded: 'Succeeded',
+  failed: 'Failed',
+  refunded: 'Refunded',
+  partially_refunded: 'Partially Refunded',
+  disputed: 'Disputed',
+  payout_pending: 'Payout Pending',
+  payout_succeeded: 'Payout Sent',
+  payout_failed: 'Payout Failed',
+}
+
+export type DisputeStatus =
+  | 'open'
+  | 'under_review'
+  | 'resolved_full_refund'
+  | 'resolved_partial_refund'
+  | 'resolved_no_refund'
+  | 'cancelled'
+
+export interface Dispute {
+  id: string
+  job_id: string
+  raised_by: string
+  raised_by_role: 'customer' | 'tradie'
+  reason: string
+  status: DisputeStatus
+  resolver_id: string | null
+  resolution_notes: string | null
+  refund_amount: number | null
+  raised_at: string
+  resolved_at: string | null
+  job?: Pick<Job, 'id' | 'title'>
+  raiser?: Pick<Profile, 'id' | 'email' | 'full_name' | 'role' | 'business_name'>
+  resolver?: Pick<Profile, 'id' | 'email' | 'full_name' | 'role'> | null
+}
+
+export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
+  open: 'Open',
+  under_review: 'Under Review',
+  resolved_full_refund: 'Resolved — Full Refund',
+  resolved_partial_refund: 'Resolved — Partial Refund',
+  resolved_no_refund: 'Resolved — No Refund',
+  cancelled: 'Cancelled',
+}

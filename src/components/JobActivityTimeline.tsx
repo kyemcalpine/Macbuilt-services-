@@ -22,6 +22,13 @@ const ACTIVITY_ICONS: Record<ActivityType, string> = {
   review_submitted: 'M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z',
   completion_requested: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
   completion_confirmed: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  payment_initiated: 'M3 10h18M7 15h1m4 0h1m4 0h1M3 5h18M3 5a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V7a2 2 0 00-2-2',
+  payment_received: 'M5 13l4 4L19 7',
+  payment_failed: 'M6 18L18 6M6 6l12 12',
+  refund_processed: 'M3 10h18M7 15h1m4 0h1m4 0h1M3 5h18M3 5a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V7a2 2 0 00-2-2',
+  payout_processed: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.657 0 3 .895 3 2s-1.343 2-3 2-3 .895-3 2 1.343 2 3 2m0-8c0-2.21 1.343-4 3-4s3 1.79 3 4-1.343 4-3 4m0-8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2',
+  dispute_raised: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
+  dispute_resolved: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
 }
 
 const ACTIVITY_ICON_COLORS: Record<ActivityType, string> = {
@@ -38,6 +45,13 @@ const ACTIVITY_ICON_COLORS: Record<ActivityType, string> = {
   review_submitted: 'text-yellow-600 bg-yellow-50',
   completion_requested: 'text-amber-600 bg-amber-50',
   completion_confirmed: 'text-green-600 bg-green-50',
+  payment_initiated: 'text-blue-600 bg-blue-50',
+  payment_received: 'text-green-600 bg-green-50',
+  payment_failed: 'text-red-600 bg-red-50',
+  refund_processed: 'text-amber-600 bg-amber-50',
+  payout_processed: 'text-green-600 bg-green-50',
+  dispute_raised: 'text-red-600 bg-red-50',
+  dispute_resolved: 'text-blue-600 bg-blue-50',
 }
 
 function formatRelativeTime(dateStr: string): string {

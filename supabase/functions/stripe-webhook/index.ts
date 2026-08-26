@@ -1,0 +1,239 @@
+import "jsr:@supabase/functions-js/edge-runtime.d.ts";
+import { createClient } from "npm:@supabase/supabase-js@2.45.4";
+import Stripe from "npm:stripe@17.3.1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+};
+
+const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
+const STRIPE_WEBHOOK_SECRET = Deno.env.get("STRIPE_WEBHOOK_SECRET");
+
+const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
+  apiVersion: "2024-12-18.acacia",
+  httpClient: Stripe.createFetchHttpClient(),
+});
+
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 200, headers: corsHeaders });
+  }
+
+  try {
+    const sig = req.headers.get("stripe-signature");
+    if (!sig || !STRIPE_WEBHOOK_SECRET) {
+      return new Response(JSON.stringify({ error: "Webhook signature missing or secret not configured" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const rawBody = await req.text();
+    const event = await stripe.webhooks.constructEventAsync(
+      rawBody,
+      sig,
+      STRIPE_WEBHOOK_SECRET
+    );
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL") ?? "",
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+      { auth: { persistSession: false } }
+    );
+
+    switch (event.type) {
+      case "payment_intent.succeeded": {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const jobId = paymentIntent.metadata?.job_id;
+        const customerId = paymentIntent.metadata?.customer_id;
+        const tradieId = paymentIntent.metadata?.tradie_id || null;
+
+        if (!jobId) break;
+
+        // Update the transaction
+        await supabase
+          .from("transactions")
+          .update({ status: "succeeded", updated_at: new Date().toISOString() })
+          .eq("stripe_payment_intent_id", paymentIntent.id)
+          .eq("type", "payment");
+
+        // Update the job payment status
+        await supabase
+          .from("jobs")
+          .update({ payment_status: "paid", updated_at: new Date().toISOString() })
+          .eq("id", jobId);
+
+        // Fetch job title for notifications
+        const { data: job } = await supabase
+          .from("jobs")
+          .select("title")
+          .eq("id", jobId)
+          .maybeSingle();
+
+        const jobTitle = job?.title || "your job";
+
+        // Log activity
+        await supabase.rpc("log_job_activity", {
+          p_job_id: jobId,
+          p_activity_type: "payment_received",
+          p_actor_id: customerId,
+          p_detail: `Payment of $${(paymentIntent.amount / 100).toFixed(2)} received`,
+          p_metadata: { amount: paymentIntent.amount / 100, payment_intent_id: paymentIntent.id },
+        });
+
+        // Notify the customer
+        if (customerId) {
+          await supabase.rpc("create_notification", {
+            p_user_id: customerId,
+            p_type: "payment_received",
+            p_title: "Payment successful",
+            p_body: `Your payment for the job "${jobTitle}" has been received.`,
+            p_job_id: jobId,
+          });
+        }
+
+        // Notify the tradie
+        if (tradieId) {
+          await supabase.rpc("create_notification", {
+            p_user_id: tradieId,
+            p_type: "payment_received",
+            p_title: "Payment received",
+            p_body: `The customer has paid for the job "${jobTitle}".`,
+            p_job_id: jobId,
+          });
+        }
+
+        break;
+      }
+
+      case "payment_intent.payment_failed": {
+        const paymentIntent = event.data.object as Stripe.PaymentIntent;
+        const jobId = paymentIntent.metadata?.job_id;
+        const customerId = paymentIntent.metadata?.customer_id;
+
+        if (!jobId) break;
+
+        const failureReason = paymentIntent.last_payment_error?.message || "Payment failed";
+
+        // Update the transaction
+        await supabase
+          .from("transactions")
+          .update({
+            status: "failed",
+            failure_reason: failureReason,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("stripe_payment_intent_id", paymentIntent.id)
+          .eq("type", "payment");
+
+        // Fetch job title
+        const { data: job } = await supabase
+          .from("jobs")
+          .select("title")
+          .eq("id", jobId)
+          .maybeSingle();
+
+        const jobTitle = job?.title || "your job";
+
+        // Log activity
+        await supabase.rpc("log_job_activity", {
+          p_job_id: jobId,
+          p_activity_type: "payment_failed",
+          p_actor_id: customerId,
+          p_detail: "Payment failed",
+          p_metadata: { reason: failureReason, payment_intent_id: paymentIntent.id },
+        });
+
+        // Notify the customer
+        if (customerId) {
+          await supabase.rpc("create_notification", {
+            p_user_id: customerId,
+            p_type: "payment_failed",
+            p_title: "Payment failed",
+            p_body: `Your payment for the job "${jobTitle}" could not be processed. Please try again.`,
+            p_job_id: jobId,
+          });
+        }
+
+        break;
+      }
+
+      case "charge.refunded": {
+        const charge = event.data.object as Stripe.Charge;
+        const paymentIntentId = charge.payment_intent as string;
+        const refundAmount = charge.amount_refunded / 100;
+
+        // Find the original payment transaction
+        const { data: paymentTxn } = await supabase
+          .from("transactions")
+          .select("job_id, customer_id, tradie_id, gross_amount")
+          .eq("stripe_payment_intent_id", paymentIntentId)
+          .eq("type", "payment")
+          .maybeSingle();
+
+        if (!paymentTxn) break;
+
+        const isFullRefund = charge.amount_refunded >= charge.amount;
+
+        // Update the refund transaction
+        await supabase
+          .from("transactions")
+          .update({
+            status: isFullRefund ? "refunded" : "partially_refunded",
+            stripe_refund_id: charge.refunds?.data[0]?.id || null,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("job_id", paymentTxn.job_id)
+          .eq("type", "refund")
+          .eq("status", "pending")
+          .order("created_at", { ascending: false })
+          .limit(1);
+
+        // Fetch job title
+        const { data: job } = await supabase
+          .from("jobs")
+          .select("title")
+          .eq("id", paymentTxn.job_id)
+          .maybeSingle();
+
+        const jobTitle = job?.title || "your job";
+
+        // Log activity
+        await supabase.rpc("log_job_activity", {
+          p_job_id: paymentTxn.job_id,
+          p_activity_type: "refund_processed",
+          p_actor_id: null,
+          p_detail: `Refund of $${refundAmount.toFixed(2)} processed`,
+          p_metadata: { amount: refundAmount, full: isFullRefund },
+        });
+
+        // Notify the customer
+        await supabase.rpc("create_notification", {
+          p_user_id: paymentTxn.customer_id,
+          p_type: "refund_processed",
+          p_title: "Refund processed",
+          p_body: `A refund of $${refundAmount.toFixed(2)} has been processed for the job "${jobTitle}".`,
+          p_job_id: paymentTxn.job_id,
+        });
+
+        break;
+      }
+
+      default:
+        // Unhandled event type — acknowledge it
+        break;
+    }
+
+    return new Response(JSON.stringify({ received: true }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err) {
+    console.error("stripe-webhook error:", err);
+    return new Response(
+      JSON.stringify({ error: "Webhook processing failed" }),
+      { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+    );
+  }
+});

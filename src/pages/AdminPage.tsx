@@ -2,9 +2,10 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
-import type { Profile, VerificationStatus } from '../types'
+import type { Profile, VerificationStatus, Transaction, Dispute, DisputeStatus } from '../types'
+import { TRANSACTION_TYPE_LABELS, TRANSACTION_STATUS_LABELS, DISPUTE_STATUS_LABELS } from '../types'
 
-type AdminTab = 'tradies' | 'conversations'
+type AdminTab = 'tradies' | 'conversations' | 'transactions' | 'disputes'
 
 interface ConversationRow {
   id: string
@@ -30,6 +31,11 @@ export function AdminPage() {
   const [tradies, setTradies] = useState<Profile[]>([])
   const [conversations, setConversations] = useState<ConversationRow[]>([])
   const [notificationActivity, setNotificationActivity] = useState<NotificationActivity[]>([])
+  const [transactions, setTransactions] = useState<Transaction[]>([])
+  const [disputes, setDisputes] = useState<Dispute[]>([])
+  const [txnFilter, setTxnFilter] = useState<string>('all')
+  const [disputeResolution, setDisputeResolution] = useState<{ disputeId: string; type: string; amount: string; notes: string } | null>(null)
+  const [resolving, setResolving] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState<VerificationStatus | 'all'>('pending')
@@ -127,14 +133,129 @@ export function AdminPage() {
     }
   }, [])
 
+  const fetchTransactions = useCallback(async () => {
+    setLoading(true)
+    let query = supabase
+      .from('transactions')
+      .select(`
+        *,
+        job:jobs!transactions_job_id_fkey ( id, title ),
+        customer:profiles!transactions_customer_id_fkey ( id, email, full_name ),
+        tradie:profiles!transactions_tradie_id_fkey ( id, email, full_name, business_name )
+      `)
+      .order('created_at', { ascending: false })
+    if (txnFilter !== 'all') {
+      query = query.eq('type', txnFilter)
+    }
+    const { data, error: fetchError } = await query
+    if (fetchError) {
+      setError('Could not load transactions.')
+      setLoading(false)
+      return
+    }
+    setTransactions((data || []) as Transaction[])
+    setLoading(false)
+  }, [txnFilter])
+
+  const fetchDisputes = useCallback(async () => {
+    setLoading(true)
+    const { data, error: fetchError } = await supabase
+      .from('disputes')
+      .select(`
+        *,
+        job:jobs!disputes_job_id_fkey ( id, title ),
+        raiser:profiles!disputes_raised_by_fkey ( id, email, full_name, role, business_name ),
+        resolver:profiles!disputes_resolver_id_fkey ( id, email, full_name, role )
+      `)
+      .order('raised_at', { ascending: false })
+    if (fetchError) {
+      setError('Could not load disputes.')
+      setLoading(false)
+      return
+    }
+    setDisputes((data || []) as Dispute[])
+    setLoading(false)
+  }, [])
+
+  const handleResolveDispute = async () => {
+    if (!disputeResolution) return
+    setResolving(true)
+    setError('')
+    const refundAmount = disputeResolution.type === 'resolved_partial_refund'
+      ? parseFloat(disputeResolution.amount)
+      : null
+    const { error: rpcError } = await supabase.rpc('resolve_dispute', {
+      p_dispute_id: disputeResolution.disputeId,
+      p_resolution: disputeResolution.type,
+      p_refund_amount: refundAmount,
+      p_notes: disputeResolution.notes || null,
+    })
+    if (rpcError) {
+      setError(rpcError.message || 'Could not resolve dispute.')
+      setResolving(false)
+      return
+    }
+    setDisputeResolution(null)
+    setResolving(false)
+    fetchDisputes()
+  }
+
+  const handleProcessPayouts = async () => {
+    setError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const token = session.session?.access_token
+      if (!token) return
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-payout`
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      })
+      if (response.ok) {
+        fetchTransactions()
+      } else {
+        setError('Could not process payouts.')
+      }
+    } catch {
+      setError('Could not process payouts.')
+    }
+  }
+
+  const handleProcessRefunds = async () => {
+    setError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const token = session.session?.access_token
+      if (!token) return
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-refund`
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({}),
+      })
+      if (response.ok) {
+        fetchTransactions()
+      } else {
+        setError('Could not process refunds.')
+      }
+    } catch {
+      setError('Could not process refunds.')
+    }
+  }
+
   useEffect(() => {
     if (tab === 'tradies') {
       fetchTradies()
     } else if (tab === 'conversations') {
       fetchConversations()
       fetchNotificationActivity()
+    } else if (tab === 'transactions') {
+      fetchTransactions()
+    } else if (tab === 'disputes') {
+      fetchDisputes()
     }
-  }, [tab, fetchTradies, fetchConversations, fetchNotificationActivity])
+  }, [tab, fetchTradies, fetchConversations, fetchNotificationActivity, fetchTransactions, fetchDisputes])
 
   const updateStatus = async (tradieId: string, status: VerificationStatus) => {
     const { error: fnError } = await supabase.rpc('set_tradie_verification', {
@@ -195,6 +316,26 @@ export function AdminPage() {
           }`}
         >
           Conversations
+        </button>
+        <button
+          onClick={() => setTab('transactions')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'transactions'
+              ? 'bg-primary-600 text-white'
+              : 'bg-white border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+          }`}
+        >
+          Transactions
+        </button>
+        <button
+          onClick={() => setTab('disputes')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'disputes'
+              ? 'bg-primary-600 text-white'
+              : 'bg-white border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+          }`}
+        >
+          Disputes
         </button>
       </div>
 
@@ -352,6 +493,191 @@ export function AdminPage() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Transactions tab */}
+      {tab === 'transactions' && (
+        <>
+          <div className="flex gap-2 mb-6 flex-wrap items-center">
+            {['all', 'payment', 'refund', 'payout'].map((f) => (
+              <button
+                key={f}
+                onClick={() => setTxnFilter(f)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors capitalize ${
+                  txnFilter === f
+                    ? 'bg-primary-600 text-white'
+                    : 'bg-white border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+                }`}
+              >
+                {f === 'all' ? 'All' : TRANSACTION_TYPE_LABELS[f as keyof typeof TRANSACTION_TYPE_LABELS]}
+              </button>
+            ))}
+            <button onClick={handleProcessPayouts} className="btn-secondary text-sm ml-auto">Process Pending Payouts</button>
+            <button onClick={handleProcessRefunds} className="btn-secondary text-sm">Process Pending Refunds</button>
+          </div>
+
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+          ) : transactions.length === 0 ? (
+            <div className="card p-12 text-center">
+              <p className="text-neutral-500">No transactions yet.</p>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div className="card p-4">
+                  <p className="text-2xl font-bold text-green-600">
+                    ${transactions.filter((t) => t.type === 'payment' && t.status === 'succeeded').reduce((s, t) => s + t.gross_amount, 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-sm text-neutral-500">Total Processed</p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-2xl font-bold text-primary-600">
+                    ${transactions.filter((t) => t.type === 'payment' && t.status === 'succeeded').reduce((s, t) => s + t.platform_fee, 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-sm text-neutral-500">Platform Fees</p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-2xl font-bold text-amber-600">
+                    {transactions.filter((t) => t.type === 'payout' && t.status === 'payout_pending').length}
+                  </p>
+                  <p className="text-sm text-neutral-500">Pending Payouts</p>
+                </div>
+                <div className="card p-4">
+                  <p className="text-2xl font-bold text-red-600">
+                    ${transactions.filter((t) => t.type === 'refund' && t.status === 'refunded').reduce((s, t) => s + t.gross_amount, 0).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </p>
+                  <p className="text-sm text-neutral-500">Total Refunded</p>
+                </div>
+              </div>
+              <div className="space-y-3">
+                {transactions.map((txn) => (
+                  <div key={txn.id} className="card p-4">
+                    <div className="flex items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-neutral-900">{TRANSACTION_TYPE_LABELS[txn.type]}</span>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                            txn.status === 'succeeded' || txn.status === 'payout_succeeded' || txn.status === 'refunded' ? 'bg-green-100 text-green-700' :
+                            txn.status === 'failed' || txn.status === 'payout_failed' ? 'bg-red-100 text-red-700' :
+                            'bg-amber-100 text-amber-700'
+                          }`}>{TRANSACTION_STATUS_LABELS[txn.status]}</span>
+                        </div>
+                        <p className="text-sm text-neutral-500 truncate">
+                          {txn.job?.title || 'Unknown job'} — {txn.customer?.full_name || txn.customer?.email || 'Unknown'}
+                        </p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <p className="font-medium text-neutral-900">
+                          {txn.type === 'refund' ? '-' : ''}${txn.gross_amount.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        </p>
+                        {txn.platform_fee > 0 && (
+                          <p className="text-xs text-neutral-400">Fee: ${txn.platform_fee.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                        )}
+                        <p className="text-xs text-neutral-400">{formatDate(txn.created_at)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {/* Disputes tab */}
+      {tab === 'disputes' && (
+        <>
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+            </div>
+          ) : disputes.length === 0 ? (
+            <div className="card p-12 text-center">
+              <p className="text-neutral-500">No disputes have been raised.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {disputes.map((dispute) => (
+                <div key={dispute.id} className="card p-6">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
+                        dispute.status === 'open' ? 'bg-amber-100 text-amber-700' :
+                        dispute.status === 'under_review' ? 'bg-blue-100 text-blue-700' :
+                        dispute.status.startsWith('resolved') ? 'bg-green-100 text-green-700' :
+                        'bg-neutral-100 text-neutral-500'
+                      }`}>{DISPUTE_STATUS_LABELS[dispute.status as DisputeStatus]}</span>
+                      <span className="text-sm text-neutral-500">
+                        by {dispute.raised_by_role === 'customer' ? 'Customer' : 'Tradie'}
+                      </span>
+                    </div>
+                    <span className="text-xs text-neutral-400">{formatDate(dispute.raised_at)}</span>
+                  </div>
+                  <p className="text-sm text-neutral-700 mb-2"><span className="text-neutral-500">Job:</span> {dispute.job?.title || 'Unknown'}</p>
+                  <p className="text-sm text-neutral-700 mb-2"><span className="text-neutral-500">Reason:</span> {dispute.reason}</p>
+                  {dispute.resolution_notes && (
+                    <p className="text-sm text-neutral-700 mb-2"><span className="text-neutral-500">Resolution:</span> {dispute.resolution_notes}</p>
+                  )}
+                  {dispute.refund_amount != null && dispute.refund_amount > 0 && (
+                    <p className="text-sm text-green-700 font-medium mb-2">Refund: ${dispute.refund_amount.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  )}
+
+                  {(dispute.status === 'open' || dispute.status === 'under_review') && (
+                    <div className="mt-4 pt-4 border-t border-neutral-100">
+                      {disputeResolution?.disputeId === dispute.id ? (
+                        <div className="space-y-3">
+                          <select
+                            value={disputeResolution.type}
+                            onChange={(e) => setDisputeResolution({ ...disputeResolution, type: e.target.value, amount: '', notes: '' })}
+                            className="input-field w-full text-sm"
+                          >
+                            <option value="">Select resolution...</option>
+                            <option value="resolved_full_refund">Full Refund</option>
+                            <option value="resolved_partial_refund">Partial Refund</option>
+                            <option value="resolved_no_refund">No Refund</option>
+                          </select>
+                          {disputeResolution.type === 'resolved_partial_refund' && (
+                            <input
+                              type="number"
+                              step="0.01"
+                              placeholder="Refund amount ($)"
+                              value={disputeResolution.amount}
+                              onChange={(e) => setDisputeResolution({ ...disputeResolution, amount: e.target.value })}
+                              className="input-field w-full text-sm"
+                            />
+                          )}
+                          <textarea
+                            placeholder="Resolution notes (optional)"
+                            value={disputeResolution.notes}
+                            onChange={(e) => setDisputeResolution({ ...disputeResolution, notes: e.target.value })}
+                            rows={2}
+                            className="input-field w-full text-sm"
+                          />
+                          <div className="flex gap-2">
+                            <button onClick={handleResolveDispute} disabled={resolving || !disputeResolution.type} className="btn-primary text-sm">
+                              {resolving ? 'Resolving...' : 'Resolve Dispute'}
+                            </button>
+                            <button onClick={() => setDisputeResolution(null)} className="btn-secondary text-sm">Cancel</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setDisputeResolution({ disputeId: dispute.id, type: '', amount: '', notes: '' })}
+                          className="btn-primary text-sm"
+                        >
+                          Review & Resolve
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </>
