@@ -1111,5 +1111,3 @@ export function JobDetailPage() {
     </div>
   )
 }
-
-export { JobDetailPage }
