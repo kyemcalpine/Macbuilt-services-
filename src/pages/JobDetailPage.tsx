@@ -6,7 +6,10 @@ import { JobStatusBadge } from '../components/JobStatusBadge'
 import { QuoteStatusBadge } from '../components/QuoteStatusBadge'
 import { QuoteForm } from '../components/QuoteForm'
 import { JobNotesSection } from '../components/JobNotesSection'
-import type { Job, JobQuote, JobStatus, ResponseType } from '../types'
+import { StarRating } from '../components/StarRating'
+import { ReviewForm } from '../components/ReviewForm'
+import { ReviewCard } from '../components/ReviewCard'
+import type { Job, JobQuote, JobReview, JobStatus, ResponseType } from '../types'
 import { JOB_STATUS_LABELS, VALID_STATUS_TRANSITIONS, QUOTE_PREFERENCE_LABELS, RESPONSE_TYPE_LABELS } from '../types'
 
 export function JobDetailPage() {
@@ -23,6 +26,9 @@ export function JobDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
   const [showQuoteForm, setShowQuoteForm] = useState(false)
   const [confirmAction, setConfirmAction] = useState<{ type: 'accept' | 'reject'; quoteId: string } | null>(null)
+  const [reviews, setReviews] = useState<JobReview[]>([])
+  const [showReviewForm, setShowReviewForm] = useState(false)
+  const [tradieRatings, setTradieRatings] = useState<Record<string, { average: number; count: number }>>({})
 
   const fetchJob = useCallback(async () => {
     setLoading(true)
@@ -87,6 +93,64 @@ export function JobDetailPage() {
   useEffect(() => {
     fetchQuotes()
   }, [fetchQuotes])
+
+  const fetchReviews = useCallback(async () => {
+    if (!id) return
+
+    const { data } = await supabase
+      .from('job_reviews')
+      .select(`
+        *,
+        reviewer:profiles!job_reviews_reviewer_id_fkey (
+          id, full_name, email, role, business_name
+        ),
+        reviewee:profiles!job_reviews_reviewee_id_fkey (
+          id, full_name, email, role, business_name
+        )
+      `)
+      .eq('job_id', id)
+      .order('created_at', { ascending: true })
+
+    if (data) {
+      setReviews(data as JobReview[])
+    }
+  }, [id])
+
+  useEffect(() => {
+    fetchReviews()
+  }, [fetchReviews])
+
+  const fetchTradieRatings = useCallback(async () => {
+    if (!profile) return
+
+    const tradieIds = Array.from(new Set(
+      quotes
+        .filter((q) => q.tradie_id)
+        .map((q) => q.tradie_id)
+    ))
+
+    if (tradieIds.length === 0) return
+
+    const ratings: Record<string, { average: number; count: number }> = {}
+
+    await Promise.all(tradieIds.map(async (tradieId) => {
+      const { data } = await supabase
+        .from('job_reviews')
+        .select('rating')
+        .eq('reviewee_id', tradieId)
+
+      if (data && data.length > 0) {
+        const sum = data.reduce((acc, r) => acc + r.rating, 0)
+        ratings[tradieId] = { average: sum / data.length, count: data.length }
+      }
+    }))
+
+    setTradieRatings(ratings)
+  }, [quotes, profile])
+
+  useEffect(() => {
+    fetchTradieRatings()
+  }, [fetchTradieRatings])
 
   const handleStatusChange = async (newStatus: JobStatus) => {
     if (!job) return
@@ -308,6 +372,14 @@ export function JobDetailPage() {
     job.status === 'completed' &&
     job.tradie_completed_at !== null &&
     job.customer_confirmed_at === null
+
+  const myReviewForJob = reviews.find((r) => r.reviewer_id === profile?.id) || null
+  const canReview =
+    job.status === 'completed' &&
+    job.customer_confirmed_at !== null &&
+    job.assigned_tradie_id !== null &&
+    (isOwner || isAssignedTradie) &&
+    !myReviewForJob
 
   const fullAddress = [
     job.address_line1,
@@ -534,6 +606,12 @@ export function JobDetailPage() {
                             {quote.tradie?.business_name && (
                               <span className="text-sm text-neutral-500">{quote.tradie.business_name}</span>
                             )}
+                            {tradieRatings[quote.tradie_id] && (
+                              <span className="inline-flex items-center gap-1 ml-1">
+                                <StarRating value={tradieRatings[quote.tradie_id].average} size="sm" showNumber />
+                                <span className="text-xs text-neutral-400">({tradieRatings[quote.tradie_id].count})</span>
+                              </span>
+                            )}
                           </div>
                           <div className="flex items-center gap-2 mt-1">
                             <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -619,6 +697,49 @@ export function JobDetailPage() {
             <JobNotesSection jobId={job.id} canAddNote={canAddNote} />
           )}
 
+          {/* Reviews section */}
+          {(reviews.length > 0 || canReview || myReviewForJob) && (
+            <div className="card p-6">
+              <h3 className="font-semibold text-neutral-900 mb-4">Reviews</h3>
+
+              {canReview && !showReviewForm && (
+                <div className="mb-4">
+                  <button
+                    onClick={() => setShowReviewForm(true)}
+                    className="btn-primary"
+                  >
+                    Leave a Review
+                  </button>
+                </div>
+              )}
+
+              {showReviewForm && (
+                <div className="mb-4">
+                  <ReviewForm
+                    jobId={job.id}
+                    onSubmitted={() => {
+                      setShowReviewForm(false)
+                      fetchReviews()
+                    }}
+                    onCancel={() => setShowReviewForm(false)}
+                  />
+                </div>
+              )}
+
+              {myReviewForJob && !showReviewForm && (
+                <p className="text-sm text-neutral-500 mb-4">You have reviewed this job.</p>
+              )}
+
+              {reviews.length > 0 && (
+                <div className="space-y-3">
+                  {reviews.map((review) => (
+                    <ReviewCard key={review.id} review={review} />
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Status section */}
           <div className="card p-6">
             <h3 className="font-semibold text-neutral-900 mb-4">Status</h3>
@@ -676,6 +797,15 @@ export function JobDetailPage() {
                   </div>
                 )}
               </div>
+              {job.assigned_tradie_id && tradieRatings[job.assigned_tradie_id] && (
+                <div className="mt-4 pt-4 border-t border-neutral-100">
+                  <span className="text-neutral-500 text-sm">Rating</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <StarRating value={tradieRatings[job.assigned_tradie_id].average} size="sm" showNumber />
+                    <span className="text-xs text-neutral-400">({tradieRatings[job.assigned_tradie_id].count} review{tradieRatings[job.assigned_tradie_id].count !== 1 ? 's' : ''})</span>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -890,3 +1020,6 @@ export function JobDetailPage() {
     </div>
   )
 }
+
+
+export { JobDetailPage }

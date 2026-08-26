@@ -24,12 +24,18 @@ interface DashboardExtras {
   recentJobs: { id: string; title: string; status: string; updated_at: string }[]
 }
 
+interface TradieRating {
+  average: number
+  count: number
+}
+
 export function DashboardPage() {
   const { profile } = useAuth()
   const [jobCounts, setJobCounts] = useState<JobCounts | null>(null)
   const [quoteCounts, setQuoteCounts] = useState<QuoteCounts | null>(null)
   const [availableJobs, setAvailableJobs] = useState<number | null>(null)
   const [extras, setExtras] = useState<DashboardExtras | null>(null)
+  const [tradieRating, setTradieRating] = useState<TradieRating | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -136,6 +142,18 @@ export function DashboardPage() {
           recentJobs: [],
         })
       })
+
+      // Fetch tradie's average rating
+      supabase
+        .from('job_reviews')
+        .select('rating')
+        .eq('reviewee_id', profile.id)
+        .then(({ data }) => {
+          if (data && data.length > 0) {
+            const sum = data.reduce((acc, r) => acc + r.rating, 0)
+            setTradieRating({ average: sum / data.length, count: data.length })
+          }
+        })
     }
   }, [profile])
 
@@ -330,6 +348,25 @@ export function DashboardPage() {
               <p className="text-2xl font-bold text-neutral-300">{quoteCounts.withdrawn}</p>
               <p className="text-sm text-neutral-500">Withdrawn</p>
             </Link>
+          </div>
+        </div>
+      )}
+
+      {/* Tradie rating card */}
+      {isApprovedTradie && tradieRating && (
+        <div className="mb-8">
+          <div className="card p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+                <svg className="w-5 h-5 text-amber-500" fill="currentColor" viewBox="0 0 24 24">
+                  <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+                </svg>
+              </div>
+              <div>
+                <p className="text-2xl font-bold text-amber-600">{tradieRating.average.toFixed(1)}</p>
+                <p className="text-sm text-neutral-500">Average Rating ({tradieRating.count} review{tradieRating.count !== 1 ? 's' : ''})</p>
+              </div>
+            </div>
           </div>
         </div>
       )}

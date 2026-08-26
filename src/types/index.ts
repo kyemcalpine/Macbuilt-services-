@@ -126,6 +126,21 @@ export type NotificationType =
   | 'job_status_changed'
   | 'new_job_note'
   | 'job_completion_confirmed'
+  | 'new_review'
+
+export interface JobReview {
+  id: string
+  job_id: string
+  reviewer_id: string
+  reviewee_id: string
+  rating: number
+  comment: string | null
+  created_at: string
+  updated_at: string
+  reviewer?: Pick<Profile, 'id' | 'full_name' | 'email' | 'role' | 'business_name'>
+  reviewee?: Pick<Profile, 'id' | 'full_name' | 'email' | 'role' | 'business_name'>
+  job?: Pick<Job, 'id' | 'title'>
+}
 
 export interface Conversation {
   id: string
@@ -171,6 +186,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'job_status_changed',
   'new_job_note',
   'job_completion_confirmed',
+  'new_review',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -183,7 +199,10 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   job_status_changed: 'Job Status Changed',
   new_job_note: 'New Job Note',
   job_completion_confirmed: 'Completion Confirmed',
+  new_review: 'New Review',
 }
+
+export const STAR_RATINGS = [1, 2, 3, 4, 5] as const
 
 export const AUSTRALIAN_STATES = [
   'NSW',

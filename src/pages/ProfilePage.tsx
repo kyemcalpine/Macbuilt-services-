@@ -2,6 +2,9 @@ import { useState, FormEvent, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { supabase } from '../lib/supabase'
 import { AUSTRALIAN_STATES, TRADE_CATEGORIES } from '../types'
+import type { JobReview } from '../types'
+import { StarRating } from '../components/StarRating'
+import { ReviewCard } from '../components/ReviewCard'
 
 export function ProfilePage() {
   const { profile, refreshProfile } = useAuth()
@@ -16,6 +19,8 @@ export function ProfilePage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [reviews, setReviews] = useState<JobReview[]>([])
+  const [avgRating, setAvgRating] = useState<number | null>(null)
 
   useEffect(() => {
     if (profile) {
@@ -28,6 +33,36 @@ export function ProfilePage() {
       setAbn(profile.abn || '')
       setTradeCategory(profile.trade_category || '')
     }
+  }, [profile])
+
+  useEffect(() => {
+    if (!profile) return
+
+    supabase
+      .from('job_reviews')
+      .select(`
+        *,
+        reviewer:profiles!job_reviews_reviewer_id_fkey (
+          id, full_name, email, role, business_name
+        ),
+        reviewee:profiles!job_reviews_reviewee_id_fkey (
+          id, full_name, email, role, business_name
+        ),
+        job:jobs!job_reviews_job_id_fkey (
+          id, title
+        )
+      `)
+      .eq('reviewee_id', profile.id)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) {
+          setReviews(data as JobReview[])
+          if (data.length > 0) {
+            const sum = data.reduce((acc, r) => acc + r.rating, 0)
+            setAvgRating(sum / data.length)
+          }
+        }
+      })
   }, [profile])
 
   const handleSubmit = async (e: FormEvent) => {
@@ -175,6 +210,28 @@ export function ProfilePage() {
           {loading ? 'Saving...' : 'Save Changes'}
         </button>
       </form>
+
+      {/* Reviews received */}
+      {reviews.length > 0 && (
+        <div className="mt-6">
+          <div className="card p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-neutral-900">Reviews About You</h3>
+              {avgRating !== null && (
+                <div className="flex items-center gap-2">
+                  <StarRating value={avgRating} size="sm" showNumber />
+                  <span className="text-xs text-neutral-400">({reviews.length} review{reviews.length !== 1 ? 's' : ''})</span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-3">
+              {reviews.map((review) => (
+                <ReviewCard key={review.id} review={review} showJobTitle />
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
