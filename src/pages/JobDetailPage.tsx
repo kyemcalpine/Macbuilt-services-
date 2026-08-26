@@ -184,17 +184,23 @@ export function JobDetailPage() {
     fetchQuotes()
   }
 
-  const handleStartConversation = async (tradieId: string) => {
+  const handleStartConversation = async (otherPartyId: string) => {
     if (!job || !profile) return
     setActionLoading(true)
     setActionError('')
+
+    // Determine customer_id and tradie_id based on who the current user is.
+    // The caller passes the ID of the OTHER party in the conversation.
+    const isCustomer = profile.id === job.customer_id
+    const customerId = isCustomer ? profile.id : job.customer_id
+    const tradieId = isCustomer ? otherPartyId : profile.id
 
     // Check if a conversation already exists for this job + customer + tradie
     const { data: existing } = await supabase
       .from('conversations')
       .select('id')
       .eq('job_id', job.id)
-      .eq('customer_id', job.customer_id)
+      .eq('customer_id', customerId)
       .eq('tradie_id', tradieId)
       .maybeSingle()
 
@@ -206,7 +212,7 @@ export function JobDetailPage() {
     // Create a new conversation
     const { data: newConv, error: insertError } = await supabase
       .from('conversations')
-      .insert({ job_id: job.id, customer_id: job.customer_id, tradie_id: tradieId })
+      .insert({ job_id: job.id, customer_id: customerId, tradie_id: tradieId })
       .select('id')
       .single()
 
