@@ -531,62 +531,107 @@ export function JobDetailPage() {
             </div>
           )}
 
-          {/* Tradie quote / interest actions */}
-          {/* Photos section */}
-          {(isOwner || isAssignedTradie || isAdmin) && attachments.length > 0 && (
-            <div className="card p-6">
-              <h3 className="font-semibold text-neutral-900 mb-4">Photos</h3>
-              <PhotoGallery
-                attachments={attachments}
-                currentUserId={profile?.id || ''}
-                onDelete={handleDeleteAttachment}
-              />
-            </div>
-          )}
+          {/* Photos section — unified gallery and uploader */}
+          {(isOwner || isAssignedTradie || isAdmin) && (
+            <div className="card p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-primary-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <h3 className="font-semibold text-neutral-900">
+                    Photos ({attachments.length})
+                  </h3>
+                </div>
+                {isOwner && (
+                  <span className="text-sm text-neutral-500">Show tradies the problem</span>
+                )}
+                {isAssignedTradie && (
+                  <span className="text-sm text-neutral-500">Share progress and completion photos</span>
+                )}
+              </div>
 
-          {/* Photo uploaders — role and status based */}
-          {(isOwner || isAssignedTradie) && job.status !== 'cancelled' && (
-            <div className="card p-6 space-y-6">
-              <h3 className="font-semibold text-neutral-900">Upload Photos</h3>
+              {attachments.length === 0 && (isOwner || isAssignedTradie) && job.status !== 'cancelled' && (
+                <div className="text-center py-6 border border-dashed border-neutral-200 rounded-lg">
+                  <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-neutral-300 mx-auto mb-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <p className="text-sm text-neutral-500">No photos yet. Upload photos to help the other party understand the job.</p>
+                </div>
+              )}
 
-              {/* Customer: job photos while open */}
-              {isOwner && job.status === 'open' && (
-                <PhotoUploader
-                  jobId={job.id}
-                  attachmentType="job_photo"
-                  onUploaded={fetchAttachments}
-                  label="Job Photos — show tradies the problem"
+              {attachments.length > 0 && (
+                <PhotoGallery
+                  attachments={attachments}
+                  currentUserId={profile?.id || ''}
+                  onDelete={handleDeleteAttachment}
                 />
               )}
 
-              {/* Tradie: progress photos while in_progress */}
-              {isAssignedTradie && job.status === 'in_progress' && (
-                <PhotoUploader
-                  jobId={job.id}
-                  attachmentType="progress_photo"
-                  onUploaded={fetchAttachments}
-                  label="Progress Photos"
-                />
-              )}
+              {(isOwner || isAssignedTradie) && job.status !== 'cancelled' && (
+                <div className="space-y-4 pt-2 border-t border-neutral-100">
+                  {/* Customer: job photos while open */}
+                  {isOwner && job.status === 'open' && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="job_photo"
+                      onUploaded={fetchAttachments}
+                      label="Job Photos — show tradies the problem"
+                    />
+                  )}
 
-              {/* Tradie: completion photos after marking complete */}
-              {isAssignedTradie && job.status === 'completed' && job.tradie_completed_at !== null && (
-                <PhotoUploader
-                  jobId={job.id}
-                  attachmentType="completion_photo"
-                  onUploaded={fetchAttachments}
-                  label="Completion Photos"
-                />
-              )}
+                  {/* Tradie: pre-work photos when assigned */}
+                  {isAssignedTradie && job.status === 'assigned' && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="additional_photo"
+                      onUploaded={fetchAttachments}
+                      label="Pre-Work Photos — show the customer you have arrived or inspected the site"
+                    />
+                  )}
 
-              {/* Both: additional photos while job is active */}
-              {(isOwner || isAssignedTradie) && job.status !== 'open' && (
-                <PhotoUploader
-                  jobId={job.id}
-                  attachmentType="additional_photo"
-                  onUploaded={fetchAttachments}
-                  label="Additional Photos"
-                />
+                  {/* Tradie: progress photos while in progress */}
+                  {isAssignedTradie && job.status === 'in_progress' && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="progress_photo"
+                      onUploaded={fetchAttachments}
+                      label="Progress Photos — document the work as you go"
+                    />
+                  )}
+
+                  {/* Tradie: completion photos after marking complete (before customer confirms) */}
+                  {isAssignedTradie && job.status === 'completed' && job.tradie_completed_at !== null && job.customer_confirmed_at === null && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="completion_photo"
+                      onUploaded={fetchAttachments}
+                      label="Completion Photos — show the customer the finished work"
+                    />
+                  )}
+
+                  {/* Customer: additional photos after job is no longer open */}
+                  {isOwner && job.status !== 'open' && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="additional_photo"
+                      onUploaded={fetchAttachments}
+                      label="Add More Photos"
+                    />
+                  )}
+
+                  {/* Tradie: additional photos after customer has confirmed completion */}
+                  {isAssignedTradie && job.status === 'completed' && job.customer_confirmed_at !== null && (
+                    <PhotoUploader
+                      jobId={job.id}
+                      attachmentType="additional_photo"
+                      onUploaded={fetchAttachments}
+                      label="Add More Photos"
+                    />
+                  )}
+                </div>
               )}
             </div>
           )}
