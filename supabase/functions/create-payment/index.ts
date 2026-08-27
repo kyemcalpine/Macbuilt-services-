@@ -197,11 +197,6 @@ Deno.serve(async (req: Request) => {
     );
   } catch (err) {
     console.error("create-payment error:", err);
-    console.error("STRIPE_DIAG err.message:", err instanceof Error ? err.message : String(err));
-    console.error("STRIPE_DIAG err.type:", (err as any)?.type ?? "N/A");
-    console.error("STRIPE_DIAG err.code:", (err as any)?.code ?? "N/A");
-    console.error("STRIPE_DIAG err.raw:", JSON.stringify((err as any)?.raw ?? "N/A"));
-    console.error("STRIPE_DIAG err.stack:", err instanceof Error ? err.stack?.split("\n").slice(0, 5).join(" | ") : "N/A");
     return new Response(
       JSON.stringify({ error: "Could not initiate payment. Please try again." }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
