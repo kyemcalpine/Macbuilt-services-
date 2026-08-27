@@ -71,6 +71,7 @@ Deno.serve(async (req: Request) => {
         const jobId = paymentIntent.metadata?.job_id;
         const customerId = paymentIntent.metadata?.customer_id;
         const tradieId = paymentIntent.metadata?.tradie_id || null;
+        const paymentType = paymentIntent.metadata?.payment_type || "full";
 
         if (!jobId) break;
 
@@ -80,9 +81,28 @@ Deno.serve(async (req: Request) => {
           .eq("stripe_payment_intent_id", paymentIntent.id)
           .eq("type", "payment");
 
+        // Fetch the job to calculate the new cumulative paid_amount
+        const { data: jobForPaid } = await supabase
+          .from("jobs")
+          .select("agreed_quote_amount, paid_amount")
+          .eq("id", jobId)
+          .maybeSingle();
+
+        const paymentAmount = paymentIntent.amount / 100;
+        const currentPaid = Number(jobForPaid?.paid_amount || 0);
+        const agreedAmount = Number(jobForPaid?.agreed_quote_amount || 0);
+        const newPaidAmount = Math.round((currentPaid + paymentAmount) * 100) / 100;
+
+        // Determine new payment_status: paid if cumulative >= agreed, else partially_paid
+        const newPaymentStatus = newPaidAmount >= agreedAmount && agreedAmount > 0 ? "paid" : "partially_paid";
+
         await supabase
           .from("jobs")
-          .update({ payment_status: "paid", updated_at: new Date().toISOString() })
+          .update({
+            payment_status: newPaymentStatus,
+            paid_amount: newPaidAmount,
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", jobId);
 
         const { data: job } = await supabase
@@ -93,12 +113,19 @@ Deno.serve(async (req: Request) => {
 
         const jobTitle = job?.title || "your job";
 
+        const labelMap: Record<string, string> = {
+          deposit: "50% deposit",
+          remaining: "remaining balance",
+          full: "full payment",
+        };
+        const paymentLabel = labelMap[paymentType] || "payment";
+
         await supabase.rpc("log_job_activity", {
           p_job_id: jobId,
           p_activity_type: "payment_received",
           p_actor_id: customerId,
-          p_detail: `Payment of $${(paymentIntent.amount / 100).toFixed(2)} received`,
-          p_metadata: { amount: paymentIntent.amount / 100, payment_intent_id: paymentIntent.id },
+          p_detail: `${paymentLabel} of ${paymentAmount.toFixed(2)} received`,
+          p_metadata: { amount: paymentAmount, payment_intent_id: paymentIntent.id, payment_type: paymentType, cumulative_paid: newPaidAmount },
         });
 
         if (customerId) {

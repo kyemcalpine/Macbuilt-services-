@@ -29,6 +29,7 @@ const ACTIVITY_ICONS: Record<ActivityType, string> = {
   payout_processed: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.657 0 3 .895 3 2s-1.343 2-3 2-3 .895-3 2 1.343 2 3 2m0-8c0-2.21 1.343-4 3-4s3 1.79 3 4-1.343 4-3 4m0-8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2',
   dispute_raised: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
   dispute_resolved: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
+  deposit_requested: 'M3 10h18M7 15h1m4 0h1m4 0h1M3 5h18M3 5a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V7a2 2 0 00-2-2',
 }
 
 const ACTIVITY_ICON_COLORS: Record<ActivityType, string> = {
@@ -52,6 +53,7 @@ const ACTIVITY_ICON_COLORS: Record<ActivityType, string> = {
   payout_processed: 'text-green-600 bg-green-50',
   dispute_raised: 'text-red-600 bg-red-50',
   dispute_resolved: 'text-blue-600 bg-blue-50',
+  deposit_requested: 'text-blue-600 bg-blue-50',
 }
 
 function formatRelativeTime(dateStr: string): string {

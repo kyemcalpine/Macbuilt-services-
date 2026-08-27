@@ -18,6 +18,8 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+type PaymentType = "full" | "deposit" | "remaining";
+
 function sanitizeError(err: unknown, stage: string) {
   if (err && typeof err === "object" && "message" in err) {
     const e = err as Record<string, unknown>;
@@ -83,6 +85,7 @@ Deno.serve(async (req: Request) => {
     stage = "parse_body";
     const body = await req.json();
     jobId = body.jobId;
+    const paymentType: PaymentType = body.paymentType || "full";
 
     if (!jobId) {
       return new Response(JSON.stringify({ error: "Job ID is required" }), {
@@ -91,10 +94,17 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    if (!["full", "deposit", "remaining"].includes(paymentType)) {
+      return new Response(JSON.stringify({ error: "Invalid payment type. Must be 'full', 'deposit', or 'remaining'." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     stage = "fetch_job";
     const { data: job, error: jobError } = await supabase
       .from("jobs")
-      .select("id, customer_id, status, payment_status, agreed_quote_amount, assigned_tradie_id, title")
+      .select("id, customer_id, status, payment_status, agreed_quote_amount, paid_amount, assigned_tradie_id, title, deposit_requested_at")
       .eq("id", jobId)
       .maybeSingle();
 
@@ -112,15 +122,23 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (job.status !== "assigned") {
-      return new Response(JSON.stringify({ error: "Payment is only available for assigned jobs" }), {
+    // Allow payment at any status except cancelled
+    if (job.status === "cancelled") {
+      return new Response(JSON.stringify({ error: "Cannot pay for a cancelled job" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    if (job.payment_status !== "unpaid") {
-      return new Response(JSON.stringify({ error: "This job has already been paid" }), {
+    if (job.payment_status === "paid") {
+      return new Response(JSON.stringify({ error: "This job has already been paid in full" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (job.payment_status === "disputed") {
+      return new Response(JSON.stringify({ error: "Cannot pay while a dispute is open on this job" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -133,6 +151,32 @@ Deno.serve(async (req: Request) => {
       });
     }
 
+    // Calculate the payment amount based on type
+    const agreedAmount = Number(job.agreed_quote_amount);
+    const paidSoFar = Number(job.paid_amount || 0);
+    let paymentAmount: number;
+
+    if (paymentType === "deposit") {
+      paymentAmount = Math.round(agreedAmount * 0.50 * 100) / 100;
+    } else if (paymentType === "remaining") {
+      paymentAmount = Math.round((agreedAmount - paidSoFar) * 100) / 100;
+      if (paymentAmount <= 0) {
+        return new Response(JSON.stringify({ error: "There is no remaining balance to pay" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    } else {
+      // full
+      paymentAmount = Math.round((agreedAmount - paidSoFar) * 100) / 100;
+      if (paymentAmount <= 0) {
+        return new Response(JSON.stringify({ error: "This job has already been paid in full" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+
     const rawOrigin = req.headers.get("origin") || req.headers.get("referer") || "";
     const origin = rawOrigin ? new URL(rawOrigin).origin : "";
     if (!origin) {
@@ -141,7 +185,14 @@ Deno.serve(async (req: Request) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const amountInCents = Math.round(job.agreed_quote_amount * 100);
+
+    const amountInCents = Math.round(paymentAmount * 100);
+
+    const labelMap: Record<PaymentType, string> = {
+      deposit: "50% Deposit",
+      remaining: "Remaining Balance",
+      full: "Full Payment",
+    };
 
     stage = "create_checkout";
     const session = await stripe.checkout.sessions.create({
@@ -151,7 +202,7 @@ Deno.serve(async (req: Request) => {
           price_data: {
             currency: "aud",
             product_data: {
-              name: `Job: ${job.title}`,
+              name: `${labelMap[paymentType]}: ${job.title}`,
             },
             unit_amount: amountInCents,
           },
@@ -165,11 +216,12 @@ Deno.serve(async (req: Request) => {
         job_id: job.id,
         customer_id: userId,
         tradie_id: job.assigned_tradie_id || "",
+        payment_type: paymentType,
       },
     });
 
-    const platformFee = Math.round(job.agreed_quote_amount * 0.035 * 100) / 100;
-    const netAmount = job.agreed_quote_amount - platformFee;
+    const platformFee = Math.round(paymentAmount * 0.035 * 100) / 100;
+    const netAmount = paymentAmount - platformFee;
 
     stage = "insert_transaction";
     await serviceClient.from("transactions").insert({
@@ -177,12 +229,17 @@ Deno.serve(async (req: Request) => {
       customer_id: userId,
       tradie_id: job.assigned_tradie_id,
       type: "payment",
-      gross_amount: job.agreed_quote_amount,
+      gross_amount: paymentAmount,
       platform_fee: platformFee,
       net_amount: netAmount,
       stripe_payment_intent_id: session.payment_intent as string,
       status: "requires_payment",
-      metadata: { job_title: job.title, checkout_session_id: session.id },
+      metadata: {
+        job_title: job.title,
+        checkout_session_id: session.id,
+        payment_type: paymentType,
+        agreed_quote_amount: agreedAmount,
+      },
     });
 
     stage = "update_job";
@@ -199,8 +256,8 @@ Deno.serve(async (req: Request) => {
       p_job_id: job.id,
       p_activity_type: "payment_initiated",
       p_actor_id: userId,
-      p_detail: "Payment initiated",
-      p_metadata: { amount: job.agreed_quote_amount, checkout_session_id: session.id },
+      p_detail: `${labelMap[paymentType]} of $${paymentAmount.toFixed(2)} initiated`,
+      p_metadata: { amount: paymentAmount, payment_type: paymentType, checkout_session_id: session.id },
     });
 
     stage = "notify_tradie";
@@ -209,7 +266,7 @@ Deno.serve(async (req: Request) => {
         p_user_id: job.assigned_tradie_id,
         p_type: "payment_required",
         p_title: "Payment in progress",
-        p_body: `The customer is making a payment for the job "${job.title}".`,
+        p_body: `The customer is making a ${labelMap[paymentType].toLowerCase()} for the job "${job.title}".`,
         p_job_id: job.id,
       });
     }
@@ -226,7 +283,7 @@ Deno.serve(async (req: Request) => {
       try {
         await serviceClient.rpc("log_job_activity", {
           p_job_id: jobId,
-          p_activity_type: "payment_error",
+          p_activity_type: "payment_failed",
           p_actor_id: userId,
           p_detail: `Payment failed at ${diag.stage}`,
           p_metadata: diag,

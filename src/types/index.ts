@@ -29,10 +29,11 @@ export type ResponseType = 'quote' | 'interest'
 
 export type QuoteStatus = 'pending' | 'accepted' | 'rejected' | 'withdrawn'
 
-export type PaymentStatus = 'unpaid' | 'paid' | 'refunded' | 'partially_refunded' | 'disputed'
+export type PaymentStatus = 'unpaid' | 'partially_paid' | 'paid' | 'refunded' | 'partially_refunded' | 'disputed'
 
 export const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
   unpaid: 'Unpaid',
+  partially_paid: 'Partially Paid',
   paid: 'Paid',
   refunded: 'Refunded',
   partially_refunded: 'Partially Refunded',
@@ -60,7 +61,10 @@ export interface Job {
   customer_confirmed_at: string | null
   agreed_quote_amount: number | null
   payment_status: PaymentStatus
+  paid_amount: number
   stripe_payment_intent_id: string | null
+  deposit_requested_at: string | null
+  deposit_request_message: string | null
   created_at: string
   updated_at: string
   customer?: Pick<Profile, 'id' | 'email' | 'full_name' | 'phone' | 'state' | 'suburb' | 'postcode'>
@@ -176,6 +180,7 @@ export type NotificationType =
   | 'payout_processed'
   | 'dispute_raised'
   | 'dispute_resolved'
+  | 'deposit_requested'
 
 export interface JobReview {
   id: string
@@ -244,6 +249,7 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'payout_processed',
   'dispute_raised',
   'dispute_resolved',
+  'deposit_requested',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -265,6 +271,7 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   payout_processed: 'Payout Sent',
   dispute_raised: 'Dispute Raised',
   dispute_resolved: 'Dispute Resolved',
+  deposit_requested: 'Deposit Requested',
 }
 
 export type ActivityType =
@@ -288,6 +295,7 @@ export type ActivityType =
   | 'payout_processed'
   | 'dispute_raised'
   | 'dispute_resolved'
+  | 'deposit_requested'
 
 export interface JobActivity {
   id: string
@@ -321,6 +329,7 @@ export const ACTIVITY_TYPE_LABELS: Record<ActivityType, string> = {
   payout_processed: 'Payout Sent',
   dispute_raised: 'Dispute Raised',
   dispute_resolved: 'Dispute Resolved',
+  deposit_requested: 'Deposit Requested',
 }
 
 export const STAR_RATINGS = [1, 2, 3, 4, 5] as const
