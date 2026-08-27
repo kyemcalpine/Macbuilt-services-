@@ -110,7 +110,14 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } }
     );
 
-    const origin = req.headers.get("origin") || req.headers.get("referer") || Deno.env.get("APP_URL") || Deno.env.get("SUPABASE_URL") || "";
+    const rawOrigin = req.headers.get("origin") || req.headers.get("referer") || "";
+    const origin = rawOrigin ? new URL(rawOrigin).origin : "";
+    if (!origin) {
+      return new Response(JSON.stringify({ error: "Could not determine redirect URL. Please refresh the page and try again." }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const amountInCents = Math.round(job.agreed_quote_amount * 100);
 
     // Create a Stripe Checkout Session
