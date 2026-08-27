@@ -139,7 +139,7 @@ Deno.serve(async (req: Request) => {
     });
 
     // Create a transaction record
-    const platformFee = Math.round(job.agreed_quote_amount * 0.10 * 100) / 100;
+    const platformFee = Math.round(job.agreed_quote_amount * 0.035 * 100) / 100;
     const netAmount = job.agreed_quote_amount - platformFee;
 
     await serviceClient.from("transactions").insert({

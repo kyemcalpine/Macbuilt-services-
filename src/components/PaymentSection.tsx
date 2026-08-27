@@ -123,12 +123,12 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
           <span className="font-medium text-neutral-900">{formatAmount(job.agreed_quote_amount)}</span>
         </div>
         <div className="flex justify-between">
-          <span className="text-neutral-500">Platform Fee (10%)</span>
-          <span className="font-medium text-neutral-600">{formatAmount(job.agreed_quote_amount * 0.10)}</span>
+          <span className="text-neutral-500">Platform Fee (3.5%)</span>
+          <span className="font-medium text-neutral-600">{formatAmount(job.agreed_quote_amount * 0.035)}</span>
         </div>
         <div className="flex justify-between border-t border-neutral-100 pt-2">
           <span className="text-neutral-500">Tradie Receives</span>
-          <span className="font-medium text-green-700">{formatAmount(job.agreed_quote_amount * 0.90)}</span>
+          <span className="font-medium text-green-700">{formatAmount(job.agreed_quote_amount * 0.965)}</span>
         </div>
       </div>
 

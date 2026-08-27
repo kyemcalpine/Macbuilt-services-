@@ -1,0 +1,17 @@
+[functions.create-payment]
+verify_jwt = true
+
+[functions.create-tradie-account]
+verify_jwt = true
+
+[functions.process-payout]
+verify_jwt = true
+
+[functions.process-refund]
+verify_jwt = true
+
+[functions.stripe-webhook]
+verify_jwt = false
+
+[functions.tradie-account-status]
+verify_jwt = true
