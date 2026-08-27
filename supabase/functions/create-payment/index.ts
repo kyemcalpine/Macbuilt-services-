@@ -110,7 +110,7 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } }
     );
 
-    const origin = req.headers.get("origin") || req.headers.get("referer") || "";
+    const origin = req.headers.get("origin") || req.headers.get("referer") || Deno.env.get("APP_URL") || Deno.env.get("SUPABASE_URL") || "";
     const amountInCents = Math.round(job.agreed_quote_amount * 100);
 
     // Create a Stripe Checkout Session
