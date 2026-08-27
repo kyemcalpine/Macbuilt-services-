@@ -18,12 +18,41 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+function sanitizeError(err: unknown, stage: string) {
+  if (err && typeof err === "object" && "message" in err) {
+    const e = err as Record<string, unknown>;
+    return {
+      message: typeof e.message === "string" ? e.message : "Unknown error",
+      type: typeof e.type === "string" ? e.type : (err instanceof Error ? err.constructor.name : "unknown"),
+      code: typeof e.code === "string" ? e.code : undefined,
+      stage,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : "Unknown error",
+    type: err instanceof Error ? err.constructor.name : "unknown",
+    code: undefined,
+    stage,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let stage = "start";
+  let jobId: string | null = null;
+  let userId: string | null = null;
+
+  const serviceClient = createClient(
+    Deno.env.get("SUPABASE_URL") ?? "",
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
+    { auth: { persistSession: false } }
+  );
+
   try {
+    stage = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
@@ -49,10 +78,11 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    const userId = userData.user.id;
+    userId = userData.user.id;
 
+    stage = "parse_body";
     const body = await req.json();
-    const { jobId } = body;
+    jobId = body.jobId;
 
     if (!jobId) {
       return new Response(JSON.stringify({ error: "Job ID is required" }), {
@@ -61,7 +91,7 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Fetch the job — RLS ensures only the owner can see it
+    stage = "fetch_job";
     const { data: job, error: jobError } = await supabase
       .from("jobs")
       .select("id, customer_id, status, payment_status, agreed_quote_amount, assigned_tradie_id, title")
@@ -103,13 +133,6 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    // Use the service role to write the transaction and update the job
-    const serviceClient = createClient(
-      Deno.env.get("SUPABASE_URL") ?? "",
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "",
-      { auth: { persistSession: false } }
-    );
-
     const rawOrigin = req.headers.get("origin") || req.headers.get("referer") || "";
     const origin = rawOrigin ? new URL(rawOrigin).origin : "";
     if (!origin) {
@@ -120,7 +143,7 @@ Deno.serve(async (req: Request) => {
     }
     const amountInCents = Math.round(job.agreed_quote_amount * 100);
 
-    // Create a Stripe Checkout Session
+    stage = "create_checkout";
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ["card"],
       line_items: [
@@ -145,10 +168,10 @@ Deno.serve(async (req: Request) => {
       },
     });
 
-    // Create a transaction record
     const platformFee = Math.round(job.agreed_quote_amount * 0.035 * 100) / 100;
     const netAmount = job.agreed_quote_amount - platformFee;
 
+    stage = "insert_transaction";
     await serviceClient.from("transactions").insert({
       job_id: job.id,
       customer_id: userId,
@@ -162,7 +185,7 @@ Deno.serve(async (req: Request) => {
       metadata: { job_title: job.title, checkout_session_id: session.id },
     });
 
-    // Store the payment intent ID on the job
+    stage = "update_job";
     await serviceClient
       .from("jobs")
       .update({
@@ -171,7 +194,7 @@ Deno.serve(async (req: Request) => {
       })
       .eq("id", job.id);
 
-    // Log activity
+    stage = "log_activity";
     await serviceClient.rpc("log_job_activity", {
       p_job_id: job.id,
       p_activity_type: "payment_initiated",
@@ -180,7 +203,7 @@ Deno.serve(async (req: Request) => {
       p_metadata: { amount: job.agreed_quote_amount, checkout_session_id: session.id },
     });
 
-    // Notify the tradie
+    stage = "notify_tradie";
     if (job.assigned_tradie_id) {
       await serviceClient.rpc("create_notification", {
         p_user_id: job.assigned_tradie_id,
@@ -196,9 +219,28 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("create-payment error:", err);
+    const diag = sanitizeError(err, stage);
+    console.error("create-payment error:", JSON.stringify(diag));
+
+    if (jobId) {
+      try {
+        await serviceClient.rpc("log_job_activity", {
+          p_job_id: jobId,
+          p_activity_type: "payment_error",
+          p_actor_id: userId,
+          p_detail: `Payment failed at ${diag.stage}`,
+          p_metadata: diag,
+        });
+      } catch {
+        // best-effort — don't mask the original error
+      }
+    }
+
     return new Response(
-      JSON.stringify({ error: "Could not initiate payment. Please try again." }),
+      JSON.stringify({
+        error: "Could not initiate payment. Please try again.",
+        diagnostic: diag,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
