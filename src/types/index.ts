@@ -108,7 +108,7 @@ export const VALID_STATUS_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
   assigned: ['in_progress', 'cancelled'],
   in_progress: ['cancelled'],
   completed: [],
-  cancelled: [],
+  cancelled: ['open'],
 }
 
 export const QUOTE_STATUSES: QuoteStatus[] = ['pending', 'accepted', 'rejected', 'withdrawn']

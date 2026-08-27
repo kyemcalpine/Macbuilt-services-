@@ -1095,9 +1095,16 @@ export function JobDetailPage() {
               <button
                 onClick={() => handleTradieStatusChange('in_progress')}
                 disabled={actionLoading}
-                className="w-full px-4 py-2 rounded-lg text-sm font-medium btn-secondary"
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium btn-secondary mb-2"
               >
                 {actionLoading ? 'Updating...' : 'Start Work'}
+              </button>
+              <button
+                onClick={() => handleTradieStatusChange('cancelled')}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                {actionLoading ? 'Updating...' : 'Cancel Job'}
               </button>
             </div>
           )}
@@ -1108,9 +1115,16 @@ export function JobDetailPage() {
               <button
                 onClick={() => handleTradieStatusChange('completed')}
                 disabled={actionLoading}
-                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors"
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-green-600 text-white hover:bg-green-700 transition-colors mb-2"
               >
                 {actionLoading ? 'Updating...' : 'Mark as Completed'}
+              </button>
+              <button
+                onClick={() => handleTradieStatusChange('cancelled')}
+                disabled={actionLoading}
+                className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-red-600 text-white hover:bg-red-700 transition-colors"
+              >
+                {actionLoading ? 'Updating...' : 'Cancel Job'}
               </button>
             </div>
           )}
@@ -1160,7 +1174,7 @@ export function JobDetailPage() {
           {canManage && job.status !== 'open' && possibleTransitions.length === 0 && (
             <div className="card p-6">
               <p className="text-sm text-neutral-500">
-                {job.status === 'cancelled' || job.status === 'completed'
+                {job.status === 'completed'
                   ? 'This job is no longer active.'
                   : 'Status changes are handled through the workflow.'}
               </p>

@@ -80,7 +80,13 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}))
-        setError(errBody.error || 'Could not initiate payment. Please try again.')
+        const baseMsg = errBody.error || 'Could not initiate payment. Please try again.'
+        const diag = errBody.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message}${diag.code ? ` — ${diag.code}` : ''}${diag.stage ? ` at ${diag.stage}` : ''})`)
+        } else {
+          setError(baseMsg)
+        }
         setPayLoading(false)
         return
       }
@@ -96,7 +102,7 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
       window.location.href = url
     } catch (err) {
       console.error('Payment error:', err)
-      setError('Could not initiate payment. Please try again.')
+      setError(err instanceof Error ? err.message : 'Could not initiate payment. Please try again.')
       setPayLoading(false)
     }
   }

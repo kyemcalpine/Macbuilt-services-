@@ -15,12 +15,33 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+function sanitizeError(err: unknown, stage: string) {
+  if (err && typeof err === "object" && "message" in err) {
+    const e = err as Record<string, unknown>;
+    return {
+      message: typeof e.message === "string" ? e.message : "Unknown error",
+      type: typeof e.type === "string" ? e.type : (err instanceof Error ? err.constructor.name : "unknown"),
+      code: typeof e.code === "string" ? e.code : undefined,
+      stage,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : "Unknown error",
+    type: err instanceof Error ? err.constructor.name : "unknown",
+    code: undefined,
+    stage,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let stage = "start";
+
   try {
+    stage = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
@@ -48,6 +69,7 @@ Deno.serve(async (req: Request) => {
 
     const userId = userData.user.id;
 
+    stage = "fetch_profile";
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("stripe_account_id, role, verification_status")
@@ -68,6 +90,7 @@ Deno.serve(async (req: Request) => {
       );
     }
 
+    stage = "retrieve_account";
     const account = await stripe.accounts.retrieve(profile.stripe_account_id);
 
     return new Response(
@@ -80,9 +103,14 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("tradie-account-status error:", err);
+    const diag = sanitizeError(err, stage);
+    console.error("tradie-account-status error:", JSON.stringify(diag));
+
     return new Response(
-      JSON.stringify({ error: "Could not check payout status. Please try again." }),
+      JSON.stringify({
+        error: "Could not check payout status. Please try again.",
+        diagnostic: diag,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

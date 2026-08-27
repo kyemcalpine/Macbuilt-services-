@@ -15,12 +15,33 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+function sanitizeError(err: unknown, stage: string) {
+  if (err && typeof err === "object" && "message" in err) {
+    const e = err as Record<string, unknown>;
+    return {
+      message: typeof e.message === "string" ? e.message : "Unknown error",
+      type: typeof e.type === "string" ? e.type : (err instanceof Error ? err.constructor.name : "unknown"),
+      code: typeof e.code === "string" ? e.code : undefined,
+      stage,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : "Unknown error",
+    type: err instanceof Error ? err.constructor.name : "unknown",
+    code: undefined,
+    stage,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let stage = "start";
+
   try {
+    stage = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
@@ -52,10 +73,11 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } }
     );
 
+    stage = "parse_body";
     const body = await req.json().catch(() => ({}));
     const jobId = body.jobId;
 
-    // Fetch pending refund transactions
+    stage = "fetch_pending_refunds";
     let query = serviceClient
       .from("transactions")
       .select(`
@@ -72,7 +94,12 @@ Deno.serve(async (req: Request) => {
     const { data: pendingRefunds, error: refundError } = await query;
 
     if (refundError || !pendingRefunds) {
-      return new Response(JSON.stringify({ error: "Could not fetch pending refunds" }), {
+      const diag = sanitizeError(refundError || "No refunds returned", stage);
+      console.error("process-refund fetch error:", JSON.stringify(diag));
+      return new Response(JSON.stringify({
+        error: "Could not fetch pending refunds",
+        diagnostic: diag,
+      }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -94,7 +121,7 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        // Issue the Stripe refund
+        stage = `create_refund_${txn.id}`;
         const refund = await stripe.refunds.create({
           payment_intent: paymentIntentId,
           amount: Math.round(txn.gross_amount * 100),
@@ -105,8 +132,7 @@ Deno.serve(async (req: Request) => {
           },
         });
 
-        // The webhook will update the transaction status when charge.refunded arrives,
-        // but we update it now to avoid duplicate processing
+        stage = `update_transaction_${txn.id}`;
         await serviceClient
           .from("transactions")
           .update({
@@ -136,9 +162,14 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("process-refund error:", err);
+    const diag = sanitizeError(err, stage);
+    console.error("process-refund error:", JSON.stringify(diag));
+
     return new Response(
-      JSON.stringify({ error: "Could not process refunds. Please try again." }),
+      JSON.stringify({
+        error: "Could not process refunds. Please try again.",
+        diagnostic: diag,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

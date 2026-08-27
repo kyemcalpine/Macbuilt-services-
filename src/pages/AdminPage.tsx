@@ -215,10 +215,17 @@ export function AdminPage() {
       if (response.ok) {
         fetchTransactions()
       } else {
-        setError('Could not process payouts.')
+        const errBody = await response.json().catch(() => ({}))
+        const baseMsg = errBody.error || 'Could not process payouts.'
+        const diag = errBody.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message})`)
+        } else {
+          setError(baseMsg)
+        }
       }
-    } catch {
-      setError('Could not process payouts.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not process payouts.')
     }
   }
 
@@ -237,10 +244,17 @@ export function AdminPage() {
       if (response.ok) {
         fetchTransactions()
       } else {
-        setError('Could not process refunds.')
+        const errBody = await response.json().catch(() => ({}))
+        const baseMsg = errBody.error || 'Could not process refunds.'
+        const diag = errBody.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message})`)
+        } else {
+          setError(baseMsg)
+        }
       }
-    } catch {
-      setError('Could not process refunds.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not process refunds.')
     }
   }
 

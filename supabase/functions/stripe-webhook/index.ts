@@ -16,12 +16,33 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+function sanitizeError(err: unknown, stage: string) {
+  if (err && typeof err === "object" && "message" in err) {
+    const e = err as Record<string, unknown>;
+    return {
+      message: typeof e.message === "string" ? e.message : "Unknown error",
+      type: typeof e.type === "string" ? e.type : (err instanceof Error ? err.constructor.name : "unknown"),
+      code: typeof e.code === "string" ? e.code : undefined,
+      stage,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : "Unknown error",
+    type: err instanceof Error ? err.constructor.name : "unknown",
+    code: undefined,
+    stage,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let stage = "start";
+
   try {
+    stage = "verify_signature";
     const sig = req.headers.get("stripe-signature");
     if (!sig || !STRIPE_WEBHOOK_SECRET) {
       return new Response(JSON.stringify({ error: "Webhook signature missing or secret not configured" }), {
@@ -45,6 +66,7 @@ Deno.serve(async (req: Request) => {
 
     switch (event.type) {
       case "payment_intent.succeeded": {
+        stage = "handle_payment_succeeded";
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         const jobId = paymentIntent.metadata?.job_id;
         const customerId = paymentIntent.metadata?.customer_id;
@@ -52,20 +74,17 @@ Deno.serve(async (req: Request) => {
 
         if (!jobId) break;
 
-        // Update the transaction
         await supabase
           .from("transactions")
           .update({ status: "succeeded", updated_at: new Date().toISOString() })
           .eq("stripe_payment_intent_id", paymentIntent.id)
           .eq("type", "payment");
 
-        // Update the job payment status
         await supabase
           .from("jobs")
           .update({ payment_status: "paid", updated_at: new Date().toISOString() })
           .eq("id", jobId);
 
-        // Fetch job title for notifications
         const { data: job } = await supabase
           .from("jobs")
           .select("title")
@@ -74,7 +93,6 @@ Deno.serve(async (req: Request) => {
 
         const jobTitle = job?.title || "your job";
 
-        // Log activity
         await supabase.rpc("log_job_activity", {
           p_job_id: jobId,
           p_activity_type: "payment_received",
@@ -83,7 +101,6 @@ Deno.serve(async (req: Request) => {
           p_metadata: { amount: paymentIntent.amount / 100, payment_intent_id: paymentIntent.id },
         });
 
-        // Notify the customer
         if (customerId) {
           await supabase.rpc("create_notification", {
             p_user_id: customerId,
@@ -94,7 +111,6 @@ Deno.serve(async (req: Request) => {
           });
         }
 
-        // Notify the tradie
         if (tradieId) {
           await supabase.rpc("create_notification", {
             p_user_id: tradieId,
@@ -109,6 +125,7 @@ Deno.serve(async (req: Request) => {
       }
 
       case "payment_intent.payment_failed": {
+        stage = "handle_payment_failed";
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         const jobId = paymentIntent.metadata?.job_id;
         const customerId = paymentIntent.metadata?.customer_id;
@@ -117,7 +134,6 @@ Deno.serve(async (req: Request) => {
 
         const failureReason = paymentIntent.last_payment_error?.message || "Payment failed";
 
-        // Update the transaction
         await supabase
           .from("transactions")
           .update({
@@ -128,7 +144,6 @@ Deno.serve(async (req: Request) => {
           .eq("stripe_payment_intent_id", paymentIntent.id)
           .eq("type", "payment");
 
-        // Fetch job title
         const { data: job } = await supabase
           .from("jobs")
           .select("title")
@@ -137,7 +152,6 @@ Deno.serve(async (req: Request) => {
 
         const jobTitle = job?.title || "your job";
 
-        // Log activity
         await supabase.rpc("log_job_activity", {
           p_job_id: jobId,
           p_activity_type: "payment_failed",
@@ -146,7 +160,6 @@ Deno.serve(async (req: Request) => {
           p_metadata: { reason: failureReason, payment_intent_id: paymentIntent.id },
         });
 
-        // Notify the customer
         if (customerId) {
           await supabase.rpc("create_notification", {
             p_user_id: customerId,
@@ -161,11 +174,11 @@ Deno.serve(async (req: Request) => {
       }
 
       case "charge.refunded": {
+        stage = "handle_refund";
         const charge = event.data.object as Stripe.Charge;
         const paymentIntentId = charge.payment_intent as string;
         const refundAmount = charge.amount_refunded / 100;
 
-        // Find the original payment transaction
         const { data: paymentTxn } = await supabase
           .from("transactions")
           .select("job_id, customer_id, tradie_id, gross_amount")
@@ -177,7 +190,6 @@ Deno.serve(async (req: Request) => {
 
         const isFullRefund = charge.amount_refunded >= charge.amount;
 
-        // Update the refund transaction
         await supabase
           .from("transactions")
           .update({
@@ -191,7 +203,6 @@ Deno.serve(async (req: Request) => {
           .order("created_at", { ascending: false })
           .limit(1);
 
-        // Fetch job title
         const { data: job } = await supabase
           .from("jobs")
           .select("title")
@@ -200,7 +211,6 @@ Deno.serve(async (req: Request) => {
 
         const jobTitle = job?.title || "your job";
 
-        // Log activity
         await supabase.rpc("log_job_activity", {
           p_job_id: paymentTxn.job_id,
           p_activity_type: "refund_processed",
@@ -209,7 +219,6 @@ Deno.serve(async (req: Request) => {
           p_metadata: { amount: refundAmount, full: isFullRefund },
         });
 
-        // Notify the customer
         await supabase.rpc("create_notification", {
           p_user_id: paymentTxn.customer_id,
           p_type: "refund_processed",
@@ -222,7 +231,6 @@ Deno.serve(async (req: Request) => {
       }
 
       default:
-        // Unhandled event type — acknowledge it
         break;
     }
 
@@ -230,9 +238,14 @@ Deno.serve(async (req: Request) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error("stripe-webhook error:", err);
+    const diag = sanitizeError(err, stage);
+    console.error("stripe-webhook error:", JSON.stringify(diag));
+
     return new Response(
-      JSON.stringify({ error: "Webhook processing failed" }),
+      JSON.stringify({
+        error: "Webhook processing failed",
+        diagnostic: diag,
+      }),
       { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }

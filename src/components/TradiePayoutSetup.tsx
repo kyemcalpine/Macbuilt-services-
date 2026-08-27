@@ -29,9 +29,19 @@ export function TradiePayoutSetup() {
       if (response.ok) {
         const data = await response.json()
         setAccountStatus(data)
+      } else {
+        const errBody = await response.json().catch(() => ({}))
+        const baseMsg = errBody.error || 'Could not check payout status.'
+        const diag = errBody.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message})`)
+        } else {
+          setError(baseMsg)
+        }
       }
     } catch (err) {
       console.error('Account status error:', err)
+      setError(err instanceof Error ? err.message : 'Could not check payout status.')
     }
   }
 
@@ -62,7 +72,13 @@ export function TradiePayoutSetup() {
 
       if (!response.ok) {
         const errBody = await response.json().catch(() => ({}))
-        setError(errBody.error || 'Could not start payout setup. Please try again.')
+        const baseMsg = errBody.error || 'Could not start payout setup. Please try again.'
+        const diag = errBody.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message}${diag.code ? ` — ${diag.code}` : ''})`)
+        } else {
+          setError(baseMsg)
+        }
         setLoading(false)
         return
       }
@@ -72,7 +88,7 @@ export function TradiePayoutSetup() {
         window.location.href = url
       }
     } catch (err) {
-      setError('Could not start payout setup. Please try again.')
+      setError(err instanceof Error ? err.message : 'Could not start payout setup. Please try again.')
       setLoading(false)
     }
   }

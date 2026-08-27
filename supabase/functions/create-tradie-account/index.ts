@@ -15,12 +15,33 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+function sanitizeError(err: unknown, stage: string) {
+  if (err && typeof err === "object" && "message" in err) {
+    const e = err as Record<string, unknown>;
+    return {
+      message: typeof e.message === "string" ? e.message : "Unknown error",
+      type: typeof e.type === "string" ? e.type : (err instanceof Error ? err.constructor.name : "unknown"),
+      code: typeof e.code === "string" ? e.code : undefined,
+      stage,
+    };
+  }
+  return {
+    message: err instanceof Error ? err.message : "Unknown error",
+    type: err instanceof Error ? err.constructor.name : "unknown",
+    code: undefined,
+    stage,
+  };
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
 
+  let stage = "start";
+
   try {
+    stage = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
       return new Response(JSON.stringify({ error: "Missing authorization header" }), {
@@ -48,7 +69,7 @@ Deno.serve(async (req: Request) => {
 
     const userId = userData.user.id;
 
-    // Fetch the tradie's profile
+    stage = "fetch_profile";
     const { data: profile, error: profileError } = await supabase
       .from("profiles")
       .select("id, role, verification_status, stripe_account_id, email, full_name, business_name")
@@ -84,7 +105,7 @@ Deno.serve(async (req: Request) => {
 
     let accountId = profile.stripe_account_id;
 
-    // Create a new Stripe Connect Express account if one doesn't exist
+    stage = "create_account";
     if (!accountId) {
       const account = await stripe.accounts.create({
         type: "express",
@@ -98,14 +119,14 @@ Deno.serve(async (req: Request) => {
 
       accountId = account.id;
 
-      // Save the account ID to the profile
+      stage = "save_account_id";
       await serviceClient
         .from("profiles")
         .update({ stripe_account_id: accountId })
         .eq("id", userId);
     }
 
-    // Create an onboarding link
+    stage = "create_onboarding_link";
     const origin = req.headers.get("origin") || req.headers.get("referer") || "https://example.com";
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
@@ -119,9 +140,14 @@ Deno.serve(async (req: Request) => {
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("create-tradie-account error:", err);
+    const diag = sanitizeError(err, stage);
+    console.error("create-tradie-account error:", JSON.stringify(diag));
+
     return new Response(
-      JSON.stringify({ error: "Could not start payout setup. Please try again." }),
+      JSON.stringify({
+        error: "Could not start payout setup. Please try again.",
+        diagnostic: diag,
+      }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   }
