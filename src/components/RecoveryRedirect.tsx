@@ -1,20 +1,17 @@
-import { useEffect } from 'react'
+import { useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 
 export function RecoveryRedirect() {
   const navigate = useNavigate()
   const location = useLocation()
+  const pathnameRef = useRef(location.pathname)
+
+  pathnameRef.current = location.pathname
 
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      // TEMPORARY DIAGNOSTIC LOGGING
-      console.warn('[DIAG] RecoveryRedirect onAuthStateChange', {
-        event,
-        pathname: location.pathname,
-        timestamp: new Date().toISOString(),
-      })
-      if (event === 'PASSWORD_RECOVERY' && location.pathname !== '/reset-password') {
+      if (event === 'PASSWORD_RECOVERY' && pathnameRef.current !== '/reset-password') {
         navigate('/reset-password', { replace: true })
       }
     })
@@ -22,7 +19,7 @@ export function RecoveryRedirect() {
     return () => {
       listener.subscription.unsubscribe()
     }
-  }, [navigate, location.pathname])
+  }, [navigate])
 
   return null
 }
