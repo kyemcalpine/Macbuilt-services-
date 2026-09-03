@@ -36,6 +36,7 @@ export function AdminPage() {
   const [txnFilter, setTxnFilter] = useState<string>('all')
   const [disputeResolution, setDisputeResolution] = useState<{ disputeId: string; type: string; amount: string; notes: string } | null>(null)
   const [resolving, setResolving] = useState(false)
+  const [payoutLoadingId, setPayoutLoadingId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState<VerificationStatus | 'all'>('pending')
@@ -226,6 +227,48 @@ export function AdminPage() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not process payouts.')
+    }
+  }
+
+  const handleReleasePayout = async (txnId: string, jobId: string) => {
+    setPayoutLoadingId(txnId)
+    setError('')
+    try {
+      const { data: session } = await supabase.auth.getSession()
+      const token = session.session?.access_token
+      if (!token) {
+        setError('You must be signed in.')
+        setPayoutLoadingId(null)
+        return
+      }
+      const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-payout`
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ jobId }),
+      })
+      const body = await response.json().catch(() => ({}))
+      if (response.ok) {
+        const succeeded = body.results?.some((r: { success: boolean }) => r.success)
+        const failed = body.results?.filter((r: { success: boolean }) => !r.success)
+        if (succeeded) {
+          fetchTransactions()
+        } else if (failed && failed.length > 0) {
+          setError(failed[0].message || 'Payout could not be processed.')
+        }
+      } else {
+        const baseMsg = body.error || 'Could not process payout.'
+        const diag = body.diagnostic
+        if (diag && diag.message) {
+          setError(`${baseMsg} (${diag.message})`)
+        } else {
+          setError(baseMsg)
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not process payout.')
+    } finally {
+      setPayoutLoadingId(null)
     }
   }
 
@@ -596,6 +639,17 @@ export function AdminPage() {
                         <p className="text-xs text-neutral-400">{formatDate(txn.created_at)}</p>
                       </div>
                     </div>
+                    {txn.type === 'payout' && txn.status === 'payout_pending' && (
+                      <div className="mt-3 pt-3 border-t border-neutral-100">
+                        <button
+                          onClick={() => handleReleasePayout(txn.id, txn.job_id)}
+                          disabled={payoutLoadingId === txn.id}
+                          className="btn-primary text-sm"
+                        >
+                          {payoutLoadingId === txn.id ? 'Processing...' : 'Release Payout to Tradie'}
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>

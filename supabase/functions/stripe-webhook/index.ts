@@ -135,6 +135,45 @@ async function processSuccessfulPayment(
       p_job_id: jobId,
     });
   }
+
+  // When the job is fully paid, create a payout transaction for the tradie
+  if (newPaymentStatus === "paid" && tradieId) {
+    // Check if a payout transaction already exists for this job to prevent duplicates
+    const { data: existingPayout } = await supabase
+      .from("transactions")
+      .select("id")
+      .eq("job_id", jobId)
+      .eq("type", "payout")
+      .maybeSingle();
+
+    if (!existingPayout) {
+      // Fetch the net amount from the payment transaction
+      const { data: paymentTxn } = await supabase
+        .from("transactions")
+        .select("net_amount, platform_fee, gross_amount")
+        .eq("job_id", jobId)
+        .eq("type", "payment")
+        .eq("status", "succeeded")
+        .maybeSingle();
+
+      if (paymentTxn) {
+        await supabase.from("transactions").insert({
+          job_id: jobId,
+          customer_id: customerId || null,
+          tradie_id: tradieId,
+          type: "payout",
+          gross_amount: paymentTxn.net_amount,
+          platform_fee: 0,
+          net_amount: paymentTxn.net_amount,
+          status: "payout_pending",
+          metadata: {
+            job_title: jobTitle,
+            source_payment_txn: matchedTxn?.id || null,
+          },
+        });
+      }
+    }
+  }
 }
 
 Deno.serve(async (req: Request) => {

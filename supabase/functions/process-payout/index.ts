@@ -73,6 +73,20 @@ Deno.serve(async (req: Request) => {
       { auth: { persistSession: false } }
     );
 
+    stage = "check_admin";
+    const { data: callerProfile } = await serviceClient
+      .from("profiles")
+      .select("role")
+      .eq("id", userData.user.id)
+      .maybeSingle();
+
+    if (!callerProfile || callerProfile.role !== "admin") {
+      return new Response(JSON.stringify({ error: "Admin access required" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     stage = "parse_body";
     const body = await req.json().catch(() => ({}));
     const jobId = body.jobId;
