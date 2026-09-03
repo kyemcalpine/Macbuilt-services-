@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { Job, Transaction, PaymentStatus } from '../types'
@@ -13,6 +14,8 @@ type PaymentType = 'full' | 'deposit' | 'remaining'
 
 export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   const { profile } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [payLoading, setPayLoading] = useState(false)
   const [depositLoading, setDepositLoading] = useState(false)
@@ -40,15 +43,17 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   }, [fetchTransactions])
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(location.search)
     const paymentStatus = params.get('payment')
     if (paymentStatus === 'success') {
       setSuccessMsg('Payment successful! Your payment has been processed.')
       onJobUpdated()
+      navigate(`/jobs/${job.id}`, { replace: true })
     } else if (paymentStatus === 'cancelled') {
       setError('Payment was cancelled. You can try again.')
+      navigate(`/jobs/${job.id}`, { replace: true })
     }
-  }, [onJobUpdated])
+  }, [location.search, onJobUpdated, job.id, navigate])
 
   const formatAmount = (amount: number) =>
     `$${amount.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`

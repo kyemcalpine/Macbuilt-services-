@@ -34,6 +34,109 @@ function sanitizeError(err: unknown, stage: string) {
   };
 }
 
+async function processSuccessfulPayment(
+  supabase: ReturnType<typeof createClient>,
+  stripeClient: Stripe,
+  paymentIntentId: string,
+  jobId: string,
+  customerId: string | undefined,
+  tradieId: string | undefined,
+  paymentType: string | undefined,
+  amount: number
+) {
+  // Primary match: by stripe_payment_intent_id
+  const { data: matchedTxn } = await supabase
+    .from("transactions")
+    .select("id")
+    .eq("stripe_payment_intent_id", paymentIntentId)
+    .eq("type", "payment")
+    .maybeSingle();
+
+  if (matchedTxn) {
+    await supabase
+      .from("transactions")
+      .update({ status: "succeeded", updated_at: new Date().toISOString() })
+      .eq("id", matchedTxn.id);
+  } else {
+    // Fallback: match by job_id + type + requires_payment status
+    await supabase
+      .from("transactions")
+      .update({ status: "succeeded", updated_at: new Date().toISOString() })
+      .eq("job_id", jobId)
+      .eq("type", "payment")
+      .eq("status", "requires_payment")
+      .order("created_at", { ascending: false })
+      .limit(1);
+  }
+
+  // Fetch the job to calculate the new cumulative paid_amount
+  const { data: jobForPaid } = await supabase
+    .from("jobs")
+    .select("agreed_quote_amount, paid_amount")
+    .eq("id", jobId)
+    .maybeSingle();
+
+  const paymentAmount = amount / 100;
+  const currentPaid = Number(jobForPaid?.paid_amount || 0);
+  const agreedAmount = Number(jobForPaid?.agreed_quote_amount || 0);
+  const newPaidAmount = Math.round((currentPaid + paymentAmount) * 100) / 100;
+
+  const newPaymentStatus = newPaidAmount >= agreedAmount && agreedAmount > 0 ? "paid" : "partially_paid";
+
+  await supabase
+    .from("jobs")
+    .update({
+      payment_status: newPaymentStatus,
+      paid_amount: newPaidAmount,
+      stripe_payment_intent_id: paymentIntentId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", jobId);
+
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("title")
+    .eq("id", jobId)
+    .maybeSingle();
+
+  const jobTitle = job?.title || "your job";
+
+  const labelMap: Record<string, string> = {
+    deposit: "50% deposit",
+    remaining: "remaining balance",
+    full: "full payment",
+  };
+  const paymentLabel = labelMap[paymentType || ""] || "payment";
+
+  await supabase.rpc("log_job_activity", {
+    p_job_id: jobId,
+    p_activity_type: "payment_received",
+    p_actor_id: customerId || null,
+    p_detail: `${paymentLabel} of ${paymentAmount.toFixed(2)} received`,
+    p_metadata: { amount: paymentAmount, payment_intent_id: paymentIntentId, payment_type: paymentType, cumulative_paid: newPaidAmount },
+  });
+
+  if (customerId) {
+    await supabase.rpc("create_notification", {
+      p_user_id: customerId,
+      p_type: "payment_received",
+      p_title: "Payment successful",
+      p_body: `Your payment for the job "${jobTitle}" has been received.`,
+      p_job_id: jobId,
+    });
+  }
+
+  if (tradieId) {
+    await supabase.rpc("create_notification", {
+      p_user_id: tradieId,
+      p_type: "payment_received",
+      p_title: "Payment received",
+      p_body: `The customer has paid for the job "${jobTitle}".`,
+      p_job_id: jobId,
+    });
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -65,126 +168,71 @@ Deno.serve(async (req: Request) => {
     );
 
     switch (event.type) {
+      case "checkout.session.completed": {
+        stage = "handle_checkout_completed";
+        const session = event.data.object as Stripe.Checkout.Session;
+        const jobId = session.metadata?.job_id;
+        const customerId = session.metadata?.customer_id;
+        const tradieId = session.metadata?.tradie_id || undefined;
+        const paymentType = session.metadata?.payment_type || "full";
+
+        if (!jobId) break;
+
+        const paymentIntentId = typeof session.payment_intent === "string"
+          ? session.payment_intent
+          : (session.payment_intent as Stripe.PaymentIntent | null)?.id || null;
+
+        if (!paymentIntentId) break;
+
+        // Retrieve the payment intent to get the actual amount
+        const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (paymentIntent.status === "succeeded") {
+          await processSuccessfulPayment(
+            supabase,
+            stripe,
+            paymentIntentId,
+            jobId,
+            customerId,
+            tradieId,
+            paymentType,
+            paymentIntent.amount
+          );
+        }
+
+        break;
+      }
+
       case "payment_intent.succeeded": {
         stage = "handle_payment_succeeded";
         const paymentIntent = event.data.object as Stripe.PaymentIntent;
         const jobId = paymentIntent.metadata?.job_id;
         const customerId = paymentIntent.metadata?.customer_id;
-        const tradieId = paymentIntent.metadata?.tradie_id || null;
+        const tradieId = paymentIntent.metadata?.tradie_id || undefined;
         const paymentType = paymentIntent.metadata?.payment_type || "full";
 
         if (!jobId) break;
 
-        // Primary match: by stripe_payment_intent_id
-        const { data: matchedTxn } = await supabase
+        // Check if this payment was already processed by checkout.session.completed
+        const { data: existingTxn } = await supabase
           .from("transactions")
-          .select("id")
+          .select("id, status")
           .eq("stripe_payment_intent_id", paymentIntent.id)
           .eq("type", "payment")
           .maybeSingle();
 
-        if (matchedTxn) {
-          await supabase
-            .from("transactions")
-            .update({ status: "succeeded", updated_at: new Date().toISOString() })
-            .eq("id", matchedTxn.id);
-        } else {
-          // Fallback: match by checkout_session_id from the payment intent's charges
-          let checkoutSessionId: string | null = null;
-          const charge = paymentIntent.latest_charge as string;
-          if (charge) {
-            try {
-              const chargeObj = await stripe.charges.retrieve(charge);
-              checkoutSessionId = chargeObj.metadata?.checkout_session_id || null;
-            } catch {
-              // best-effort
-            }
-          }
-          if (!checkoutSessionId) {
-            // Try matching by job_id and type since we have the metadata
-            await supabase
-              .from("transactions")
-              .update({ status: "succeeded", updated_at: new Date().toISOString() })
-              .eq("job_id", jobId)
-              .eq("type", "payment")
-              .eq("status", "requires_payment")
-              .order("created_at", { ascending: false })
-              .limit(1);
-          } else {
-            await supabase
-              .from("transactions")
-              .update({ status: "succeeded", updated_at: new Date().toISOString() })
-              .eq("metadata->>checkout_session_id", checkoutSessionId)
-              .eq("type", "payment");
-          }
-        }
+        if (existingTxn?.status === "succeeded") break;
 
-        // Fetch the job to calculate the new cumulative paid_amount
-        const { data: jobForPaid } = await supabase
-          .from("jobs")
-          .select("agreed_quote_amount, paid_amount")
-          .eq("id", jobId)
-          .maybeSingle();
-
-        const paymentAmount = paymentIntent.amount / 100;
-        const currentPaid = Number(jobForPaid?.paid_amount || 0);
-        const agreedAmount = Number(jobForPaid?.agreed_quote_amount || 0);
-        const newPaidAmount = Math.round((currentPaid + paymentAmount) * 100) / 100;
-
-        // Determine new payment_status: paid if cumulative >= agreed, else partially_paid
-        const newPaymentStatus = newPaidAmount >= agreedAmount && agreedAmount > 0 ? "paid" : "partially_paid";
-
-        await supabase
-          .from("jobs")
-          .update({
-            payment_status: newPaymentStatus,
-            paid_amount: newPaidAmount,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", jobId);
-
-        const { data: job } = await supabase
-          .from("jobs")
-          .select("title")
-          .eq("id", jobId)
-          .maybeSingle();
-
-        const jobTitle = job?.title || "your job";
-
-        const labelMap: Record<string, string> = {
-          deposit: "50% deposit",
-          remaining: "remaining balance",
-          full: "full payment",
-        };
-        const paymentLabel = labelMap[paymentType] || "payment";
-
-        await supabase.rpc("log_job_activity", {
-          p_job_id: jobId,
-          p_activity_type: "payment_received",
-          p_actor_id: customerId,
-          p_detail: `${paymentLabel} of ${paymentAmount.toFixed(2)} received`,
-          p_metadata: { amount: paymentAmount, payment_intent_id: paymentIntent.id, payment_type: paymentType, cumulative_paid: newPaidAmount },
-        });
-
-        if (customerId) {
-          await supabase.rpc("create_notification", {
-            p_user_id: customerId,
-            p_type: "payment_received",
-            p_title: "Payment successful",
-            p_body: `Your payment for the job "${jobTitle}" has been received.`,
-            p_job_id: jobId,
-          });
-        }
-
-        if (tradieId) {
-          await supabase.rpc("create_notification", {
-            p_user_id: tradieId,
-            p_type: "payment_received",
-            p_title: "Payment received",
-            p_body: `The customer has paid for the job "${jobTitle}".`,
-            p_job_id: jobId,
-          });
-        }
+        await processSuccessfulPayment(
+          supabase,
+          stripe,
+          paymentIntent.id,
+          jobId,
+          customerId,
+          tradieId,
+          paymentType,
+          paymentIntent.amount
+        );
 
         break;
       }
@@ -243,7 +291,7 @@ Deno.serve(async (req: Request) => {
         await supabase.rpc("log_job_activity", {
           p_job_id: jobId,
           p_activity_type: "payment_failed",
-          p_actor_id: customerId,
+          p_actor_id: customerId || null,
           p_detail: "Payment failed",
           p_metadata: { reason: failureReason, payment_intent_id: paymentIntent.id },
         });

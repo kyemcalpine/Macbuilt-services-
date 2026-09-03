@@ -210,18 +210,24 @@ Deno.serve(async (req: Request) => {
         },
       ],
       mode: "payment",
-      success_url: `${origin}/jobs/${job.id}?payment=success`,
-      cancel_url: `${origin}/jobs/${job.id}?payment=cancelled`,
+      success_url: `${origin}/#/jobs/${job.id}?payment=success`,
+      cancel_url: `${origin}/#/jobs/${job.id}?payment=cancelled`,
       metadata: {
         job_id: job.id,
         customer_id: userId,
         tradie_id: job.assigned_tradie_id || "",
         payment_type: paymentType,
       },
+      payment_intent_data: {
+        metadata: {
+          job_id: job.id,
+          customer_id: userId,
+          tradie_id: job.assigned_tradie_id || "",
+          payment_type: paymentType,
+        },
+      },
     });
 
-    // Stripe may return payment_intent as null right after session creation.
-    // Retrieve the session with expansion to get the actual payment intent ID.
     let paymentIntentId = session.payment_intent as string | null;
     if (!paymentIntentId) {
       stage = "retrieve_session";
@@ -232,6 +238,17 @@ Deno.serve(async (req: Request) => {
         typeof retrieved.payment_intent === "string"
           ? retrieved.payment_intent
           : (retrieved.payment_intent as Stripe.PaymentIntent | null)?.id ?? null;
+    }
+
+    // Add checkout_session_id to the PaymentIntent metadata so the webhook can match it.
+    if (paymentIntentId) {
+      try {
+        await stripe.paymentIntents.update(paymentIntentId, {
+          metadata: { checkout_session_id: session.id },
+        });
+      } catch {
+        // best-effort — the webhook has other fallback matching strategies
+      }
     }
 
     const platformFee = Math.round(paymentAmount * 0.035 * 100) / 100;
