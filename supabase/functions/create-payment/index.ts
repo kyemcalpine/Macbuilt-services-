@@ -220,6 +220,20 @@ Deno.serve(async (req: Request) => {
       },
     });
 
+    // Stripe may return payment_intent as null right after session creation.
+    // Retrieve the session with expansion to get the actual payment intent ID.
+    let paymentIntentId = session.payment_intent as string | null;
+    if (!paymentIntentId) {
+      stage = "retrieve_session";
+      const retrieved = await stripe.checkout.sessions.retrieve(session.id, {
+        expand: ["payment_intent"],
+      });
+      paymentIntentId =
+        typeof retrieved.payment_intent === "string"
+          ? retrieved.payment_intent
+          : (retrieved.payment_intent as Stripe.PaymentIntent | null)?.id ?? null;
+    }
+
     const platformFee = Math.round(paymentAmount * 0.035 * 100) / 100;
     const netAmount = paymentAmount - platformFee;
 
@@ -232,7 +246,7 @@ Deno.serve(async (req: Request) => {
       gross_amount: paymentAmount,
       platform_fee: platformFee,
       net_amount: netAmount,
-      stripe_payment_intent_id: session.payment_intent as string,
+      stripe_payment_intent_id: paymentIntentId,
       status: "requires_payment",
       metadata: {
         job_title: job.title,
@@ -246,7 +260,7 @@ Deno.serve(async (req: Request) => {
     await serviceClient
       .from("jobs")
       .update({
-        stripe_payment_intent_id: session.payment_intent as string,
+        stripe_payment_intent_id: paymentIntentId,
         updated_at: new Date().toISOString(),
       })
       .eq("id", job.id);

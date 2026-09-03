@@ -75,11 +75,49 @@ Deno.serve(async (req: Request) => {
 
         if (!jobId) break;
 
-        await supabase
+        // Primary match: by stripe_payment_intent_id
+        const { data: matchedTxn } = await supabase
           .from("transactions")
-          .update({ status: "succeeded", updated_at: new Date().toISOString() })
+          .select("id")
           .eq("stripe_payment_intent_id", paymentIntent.id)
-          .eq("type", "payment");
+          .eq("type", "payment")
+          .maybeSingle();
+
+        if (matchedTxn) {
+          await supabase
+            .from("transactions")
+            .update({ status: "succeeded", updated_at: new Date().toISOString() })
+            .eq("id", matchedTxn.id);
+        } else {
+          // Fallback: match by checkout_session_id from the payment intent's charges
+          let checkoutSessionId: string | null = null;
+          const charge = paymentIntent.latest_charge as string;
+          if (charge) {
+            try {
+              const chargeObj = await stripe.charges.retrieve(charge);
+              checkoutSessionId = chargeObj.metadata?.checkout_session_id || null;
+            } catch {
+              // best-effort
+            }
+          }
+          if (!checkoutSessionId) {
+            // Try matching by job_id and type since we have the metadata
+            await supabase
+              .from("transactions")
+              .update({ status: "succeeded", updated_at: new Date().toISOString() })
+              .eq("job_id", jobId)
+              .eq("type", "payment")
+              .eq("status", "requires_payment")
+              .order("created_at", { ascending: false })
+              .limit(1);
+          } else {
+            await supabase
+              .from("transactions")
+              .update({ status: "succeeded", updated_at: new Date().toISOString() })
+              .eq("metadata->>checkout_session_id", checkoutSessionId)
+              .eq("type", "payment");
+          }
+        }
 
         // Fetch the job to calculate the new cumulative paid_amount
         const { data: jobForPaid } = await supabase
@@ -161,15 +199,38 @@ Deno.serve(async (req: Request) => {
 
         const failureReason = paymentIntent.last_payment_error?.message || "Payment failed";
 
-        await supabase
+        // Primary match: by stripe_payment_intent_id
+        const { data: failedTxn } = await supabase
           .from("transactions")
-          .update({
-            status: "failed",
-            failure_reason: failureReason,
-            updated_at: new Date().toISOString(),
-          })
+          .select("id")
           .eq("stripe_payment_intent_id", paymentIntent.id)
-          .eq("type", "payment");
+          .eq("type", "payment")
+          .maybeSingle();
+
+        if (failedTxn) {
+          await supabase
+            .from("transactions")
+            .update({
+              status: "failed",
+              failure_reason: failureReason,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", failedTxn.id);
+        } else {
+          // Fallback: match by job_id
+          await supabase
+            .from("transactions")
+            .update({
+              status: "failed",
+              failure_reason: failureReason,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("job_id", jobId)
+            .eq("type", "payment")
+            .eq("status", "requires_payment")
+            .order("created_at", { ascending: false })
+            .limit(1);
+        }
 
         const { data: job } = await supabase
           .from("jobs")
