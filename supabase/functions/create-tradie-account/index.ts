@@ -180,7 +180,16 @@ Deno.serve(async (req: Request) => {
           merchant: {
             capabilities: {
               card_payments: { requested: true },
-              transfers: { requested: true },
+              stripe_balance: {
+                payouts: { requested: true },
+              },
+            },
+          },
+          recipient: {
+            capabilities: {
+              stripe_balance: {
+                stripe_transfers: { requested: true },
+              },
             },
           },
         },
@@ -207,7 +216,7 @@ Deno.serve(async (req: Request) => {
       refresh_url: `${origin}/#/profile?stripe_refresh=true`,
       return_url: `${origin}/#/profile?stripe_return=true`,
       type: "account_onboarding",
-      configurations: ["merchant"],
+      configurations: ["merchant", "recipient"],
     });
 
     return new Response(

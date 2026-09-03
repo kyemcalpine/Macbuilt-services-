@@ -110,15 +110,21 @@ Deno.serve(async (req: Request) => {
     }
 
     stage = "retrieve_account_v2";
-    const account = await stripeV2Get(`core/accounts/${profile.stripe_account_id}?include[]=configuration.merchant.capabilities`);
+    const account = await stripeV2Get(`core/accounts/${profile.stripe_account_id}?include[]=configuration.merchant.capabilities&include[]=configuration.recipient.capabilities`);
 
     const merchantConfig = (account.configuration as Record<string, unknown>)?.merchant as Record<string, unknown> | undefined;
-    const capabilities = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
-    const cardPaymentsStatus = capabilities?.card_payments?.status as string | undefined;
-    const transfersStatus = capabilities?.transfers?.status as string | undefined;
+    const merchantCaps = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
+    const cardPaymentsStatus = merchantCaps?.card_payments?.status as string | undefined;
+    const stripeBalancePayouts = merchantCaps?.stripe_balance as Record<string, Record<string, unknown>> | undefined;
+    const payoutsStatus = stripeBalancePayouts?.payouts?.status as string | undefined;
+
+    const recipientConfig = (account.configuration as Record<string, unknown>)?.recipient as Record<string, unknown> | undefined;
+    const recipientCaps = recipientConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
+    const recipientStripeBalance = recipientCaps?.stripe_balance as Record<string, Record<string, unknown>> | undefined;
+    const transfersStatus = recipientStripeBalance?.stripe_transfers?.status as string | undefined;
 
     const chargesEnabled = cardPaymentsStatus === "active";
-    const payoutsEnabled = transfersStatus === "active";
+    const payoutsEnabled = payoutsStatus === "active" || transfersStatus === "active";
     const detailsSubmitted = account.onboarding_completed as boolean | undefined;
 
     return new Response(

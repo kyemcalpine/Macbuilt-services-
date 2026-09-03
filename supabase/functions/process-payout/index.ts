@@ -165,14 +165,20 @@ Deno.serve(async (req: Request) => {
 
       try {
         stage = `retrieve_account_v2_${txn.id}`;
-        const account = await stripeV2Get(`core/accounts/${tradie.stripe_account_id}?include[]=configuration.merchant.capabilities`);
+        const account = await stripeV2Get(`core/accounts/${tradie.stripe_account_id}?include[]=configuration.merchant.capabilities&include[]=configuration.recipient.capabilities`);
 
         const merchantConfig = (account.configuration as Record<string, unknown>)?.merchant as Record<string, unknown> | undefined;
-        const capabilities = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
-        const cardPaymentsStatus = capabilities?.card_payments?.status as string | undefined;
-        const transfersStatus = capabilities?.transfers?.status as string | undefined;
+        const merchantCaps = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
+        const cardPaymentsStatus = merchantCaps?.card_payments?.status as string | undefined;
+        const merchantStripeBalance = merchantCaps?.stripe_balance as Record<string, Record<string, unknown>> | undefined;
+        const payoutsStatus = merchantStripeBalance?.payouts?.status as string | undefined;
 
-        if (cardPaymentsStatus !== "active" || transfersStatus !== "active") {
+        const recipientConfig = (account.configuration as Record<string, unknown>)?.recipient as Record<string, unknown> | undefined;
+        const recipientCaps = recipientConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
+        const recipientStripeBalance = recipientCaps?.stripe_balance as Record<string, Record<string, unknown>> | undefined;
+        const transfersStatus = recipientStripeBalance?.stripe_transfers?.status as string | undefined;
+
+        if (cardPaymentsStatus !== "active" || (payoutsStatus !== "active" && transfersStatus !== "active")) {
           results.push({
             transactionId: txn.id,
             success: false,
