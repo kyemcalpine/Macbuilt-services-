@@ -157,6 +157,31 @@ async function processSuccessfulPayment(
         .maybeSingle();
 
       if (paymentTxn) {
+        // Destination charges auto-transfer funds to the connected account at charge time,
+        // so the payout is already succeeded. For direct charges (no connected account
+        // at payment time), the payout stays pending for manual release via process-payout.
+        const { data: jobForTradie } = await supabase
+          .from("jobs")
+          .select("assigned_tradie_id")
+          .eq("id", jobId)
+          .maybeSingle();
+
+        let payoutStatus = "payout_pending";
+        let transferId = null;
+
+        if (jobForTradie?.assigned_tradie_id) {
+          const { data: tradieProfile } = await supabase
+            .from("profiles")
+            .select("stripe_account_id")
+            .eq("id", jobForTradie.assigned_tradie_id)
+            .maybeSingle();
+
+          if (tradieProfile?.stripe_account_id) {
+            payoutStatus = "payout_succeeded";
+            transferId = `auto_destination_charge`;
+          }
+        }
+
         await supabase.from("transactions").insert({
           job_id: jobId,
           customer_id: customerId || null,
@@ -165,12 +190,24 @@ async function processSuccessfulPayment(
           gross_amount: paymentTxn.net_amount,
           platform_fee: 0,
           net_amount: paymentTxn.net_amount,
-          status: "payout_pending",
+          stripe_transfer_id: transferId,
+          status: payoutStatus,
           metadata: {
             job_title: jobTitle,
             source_payment_txn: matchedTxn?.id || null,
+            auto_transfer: payoutStatus === "payout_succeeded",
           },
         });
+
+        if (payoutStatus === "payout_succeeded") {
+          await supabase.rpc("log_job_activity", {
+            p_job_id: jobId,
+            p_activity_type: "payout_processed",
+            p_actor_id: null,
+            p_detail: `Payout of ${Number(paymentTxn.net_amount).toFixed(2)} transferred to tradie account`,
+            p_metadata: { net_amount: paymentTxn.net_amount, auto_transfer: true },
+          });
+        }
       }
     }
   }

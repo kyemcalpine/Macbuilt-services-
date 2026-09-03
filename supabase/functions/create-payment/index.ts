@@ -213,8 +213,21 @@ Deno.serve(async (req: Request) => {
       full: "Full Payment",
     };
 
+    stage = "fetch_tradie_account";
+    let tradieStripeAccountId: string | null = null;
+    if (job.assigned_tradie_id) {
+      const { data: tradieProfile } = await serviceClient
+        .from("profiles")
+        .select("stripe_account_id")
+        .eq("id", job.assigned_tradie_id)
+        .maybeSingle();
+      tradieStripeAccountId = tradieProfile?.stripe_account_id || null;
+    }
+
+    const platformFeeCents = Math.round(paymentAmount * 0.035 * 100);
+
     stage = "create_checkout";
-    const session = await stripe.checkout.sessions.create({
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       payment_method_types: ["card"],
       line_items: [
         {
@@ -245,7 +258,19 @@ Deno.serve(async (req: Request) => {
           payment_type: paymentType,
         },
       },
-    });
+    };
+
+    if (tradieStripeAccountId) {
+      sessionParams.payment_intent_data = {
+        ...sessionParams.payment_intent_data,
+        application_fee_amount: platformFeeCents,
+        transfer_data: {
+          destination: tradieStripeAccountId,
+        },
+      };
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
 
     let paymentIntentId = session.payment_intent as string | null;
     if (!paymentIntentId) {
