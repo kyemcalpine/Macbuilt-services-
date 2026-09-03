@@ -217,10 +217,14 @@ Deno.serve(async (req: Request) => {
     const origin = req.headers.get("origin") || req.headers.get("referer") || "https://example.com";
     const accountLink = await stripeV2Post("core/account_links", {
       account: accountId,
-      refresh_url: `${origin}/#/profile?stripe_refresh=true`,
-      return_url: `${origin}/#/profile?stripe_return=true`,
-      type: "account_onboarding",
-      configurations: ["merchant", "recipient"],
+      use_case: {
+        type: "account_onboarding",
+        account_onboarding: {
+          configurations: ["merchant", "recipient"],
+          refresh_url: `${origin}/#/profile?stripe_refresh=true`,
+          return_url: `${origin}/#/profile?stripe_return=true`,
+        },
+      },
     });
 
     return new Response(
