@@ -47,26 +47,50 @@ async function processSuccessfulPayment(
   // Primary match: by stripe_payment_intent_id
   const { data: matchedTxn } = await supabase
     .from("transactions")
-    .select("id")
+    .select("id, status")
     .eq("stripe_payment_intent_id", paymentIntentId)
     .eq("type", "payment")
     .maybeSingle();
 
   if (matchedTxn) {
+    if (matchedTxn.status === "succeeded") return;
     await supabase
       .from("transactions")
       .update({ status: "succeeded", updated_at: new Date().toISOString() })
       .eq("id", matchedTxn.id);
   } else {
     // Fallback: match by job_id + type + requires_payment status
-    await supabase
+    const { data: fallbackTxn } = await supabase
       .from("transactions")
-      .update({ status: "succeeded", updated_at: new Date().toISOString() })
+      .select("id, status")
       .eq("job_id", jobId)
       .eq("type", "payment")
       .eq("status", "requires_payment")
       .order("created_at", { ascending: false })
-      .limit(1);
+      .limit(1)
+      .maybeSingle();
+
+    if (fallbackTxn) {
+      await supabase
+        .from("transactions")
+        .update({
+          status: "succeeded",
+          stripe_payment_intent_id: paymentIntentId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", fallbackTxn.id);
+    } else {
+      // Already processed — check if any succeeded payment txn exists for this job
+      const { data: alreadySucceeded } = await supabase
+        .from("transactions")
+        .select("id")
+        .eq("job_id", jobId)
+        .eq("type", "payment")
+        .eq("status", "succeeded")
+        .limit(1)
+        .maybeSingle();
+      if (alreadySucceeded) return;
+    }
   }
 
   // Fetch the job to calculate the new cumulative paid_amount
@@ -139,14 +163,13 @@ async function processSuccessfulPayment(
   // When the job is fully paid, create a payout transaction for the tradie
   if (newPaymentStatus === "paid" && tradieId) {
     // Check if a payout transaction already exists for this job to prevent duplicates
-    const { data: existingPayout } = await supabase
+    const { data: existingPayouts } = await supabase
       .from("transactions")
       .select("id")
       .eq("job_id", jobId)
-      .eq("type", "payout")
-      .maybeSingle();
+      .eq("type", "payout");
 
-    if (!existingPayout) {
+    if (!existingPayouts || existingPayouts.length === 0) {
       // Fetch the net amount from the payment transaction
       const { data: paymentTxn } = await supabase
         .from("transactions")
@@ -298,6 +321,18 @@ Deno.serve(async (req: Request) => {
           .maybeSingle();
 
         if (existingTxn?.status === "succeeded") break;
+
+        // Also check by job_id in case PI ID wasn't saved yet
+        const { data: fallbackSucceeded } = await supabase
+          .from("transactions")
+          .select("id, status")
+          .eq("job_id", jobId)
+          .eq("type", "payment")
+          .eq("status", "succeeded")
+          .limit(1)
+          .maybeSingle();
+
+        if (fallbackSucceeded?.status === "succeeded") break;
 
         await processSuccessfulPayment(
           supabase,

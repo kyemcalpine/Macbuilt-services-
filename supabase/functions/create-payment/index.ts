@@ -272,16 +272,25 @@ Deno.serve(async (req: Request) => {
 
     const session = await stripe.checkout.sessions.create(sessionParams);
 
-    let paymentIntentId = session.payment_intent as string | null;
+    let paymentIntentId: string | null = null;
+    const rawPi = session.payment_intent;
+    if (typeof rawPi === "string") {
+      paymentIntentId = rawPi;
+    } else if (rawPi && typeof rawPi === "object" && "id" in rawPi) {
+      paymentIntentId = rawPi.id;
+    }
+
     if (!paymentIntentId) {
       stage = "retrieve_session";
       const retrieved = await stripe.checkout.sessions.retrieve(session.id, {
         expand: ["payment_intent"],
       });
-      paymentIntentId =
-        typeof retrieved.payment_intent === "string"
-          ? retrieved.payment_intent
-          : (retrieved.payment_intent as Stripe.PaymentIntent | null)?.id ?? null;
+      const retrievedPi = retrieved.payment_intent;
+      if (typeof retrievedPi === "string") {
+        paymentIntentId = retrievedPi;
+      } else if (retrievedPi && typeof retrievedPi === "object" && "id" in retrievedPi) {
+        paymentIntentId = retrievedPi.id;
+      }
     }
 
     // Add checkout_session_id to the PaymentIntent metadata so the webhook can match it.
