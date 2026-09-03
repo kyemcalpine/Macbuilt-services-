@@ -180,9 +180,6 @@ Deno.serve(async (req: Request) => {
           merchant: {
             capabilities: {
               card_payments: { requested: true },
-              stripe_balance: {
-                payouts: { requested: true },
-              },
             },
           },
           recipient: {

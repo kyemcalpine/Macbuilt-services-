@@ -115,8 +115,6 @@ Deno.serve(async (req: Request) => {
     const merchantConfig = (account.configuration as Record<string, unknown>)?.merchant as Record<string, unknown> | undefined;
     const merchantCaps = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
     const cardPaymentsStatus = merchantCaps?.card_payments?.status as string | undefined;
-    const stripeBalancePayouts = merchantCaps?.stripe_balance as Record<string, Record<string, unknown>> | undefined;
-    const payoutsStatus = stripeBalancePayouts?.payouts?.status as string | undefined;
 
     const recipientConfig = (account.configuration as Record<string, unknown>)?.recipient as Record<string, unknown> | undefined;
     const recipientCaps = recipientConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
@@ -124,7 +122,7 @@ Deno.serve(async (req: Request) => {
     const transfersStatus = recipientStripeBalance?.stripe_transfers?.status as string | undefined;
 
     const chargesEnabled = cardPaymentsStatus === "active";
-    const payoutsEnabled = payoutsStatus === "active" || transfersStatus === "active";
+    const payoutsEnabled = transfersStatus === "active";
     const detailsSubmitted = account.onboarding_completed as boolean | undefined;
 
     return new Response(
