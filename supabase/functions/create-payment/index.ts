@@ -12,6 +12,9 @@ const STRIPE_SECRET_KEY = Deno.env.get("STRIPE_SECRET_KEY");
 if (!STRIPE_SECRET_KEY) {
   console.error("STRIPE_SECRET_KEY is not configured");
 }
+if (STRIPE_SECRET_KEY && !STRIPE_SECRET_KEY.startsWith("sk_")) {
+  console.error("STRIPE_SECRET_KEY has an invalid prefix. Expected sk_test_ or sk_live_, got: " + STRIPE_SECRET_KEY.substring(0, 8) + "...");
+}
 
 const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   apiVersion: "2024-12-18.acacia",
@@ -54,6 +57,22 @@ Deno.serve(async (req: Request) => {
   );
 
   try {
+    stage = "validate_stripe_key";
+    if (!STRIPE_SECRET_KEY) {
+      return new Response(JSON.stringify({ error: "Stripe is not configured. Please contact support." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    if (!STRIPE_SECRET_KEY.startsWith("sk_")) {
+      return new Response(JSON.stringify({
+        error: "Stripe secret key is invalid. It must start with sk_test_ or sk_live_. Please update the STRIPE_SECRET_KEY edge function secret.",
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     stage = "auth";
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) {
