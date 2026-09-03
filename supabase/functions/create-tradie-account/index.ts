@@ -172,6 +172,7 @@ Deno.serve(async (req: Request) => {
       const account = await stripeV2Post("core/accounts", {
         contact_email: profile.email || undefined,
         display_name: profile.business_name || profile.full_name || undefined,
+        dashboard: "express",
         identity: {
           country: "AU",
           entity_type: "company",
@@ -188,6 +189,12 @@ Deno.serve(async (req: Request) => {
                 stripe_transfers: { requested: true },
               },
             },
+          },
+        },
+        defaults: {
+          responsibilities: {
+            fees_collector: "stripe",
+            losses_collector: "stripe",
           },
         },
         metadata: {
