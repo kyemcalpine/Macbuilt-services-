@@ -165,7 +165,7 @@ Deno.serve(async (req: Request) => {
 
       try {
         stage = `retrieve_account_v2_${txn.id}`;
-        const account = await stripeV2Get(`core/accounts/${tradie.stripe_account_id}?include[]=configuration.merchant.capabilities&include[]=configuration.recipient.capabilities`);
+        const account = await stripeV2Get(`core/accounts/${tradie.stripe_account_id}?include[0]=configuration.merchant&include[1]=configuration.recipient`);
 
         const merchantConfig = (account.configuration as Record<string, unknown>)?.merchant as Record<string, unknown> | undefined;
         const merchantCaps = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
