@@ -15,6 +15,25 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+const STRIPE_V2_VERSION = "2026-08-26.preview";
+
+async function stripeV2Get(path: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`https://api.stripe.com/v2/${path}`, {
+    headers: {
+      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_V2_VERSION,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const errMsg = (data as Record<string, unknown>)?.error
+      ? ((data as Record<string, unknown>).error as Record<string, unknown>)?.message
+      : `Stripe V2 API error: ${response.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : `Stripe V2 API error: ${response.status}`);
+  }
+  return data as Record<string, unknown>;
+}
+
 function sanitizeError(err: unknown, stage: string) {
   if (err && typeof err === "object" && "message" in err) {
     const e = err as Record<string, unknown>;
@@ -145,10 +164,15 @@ Deno.serve(async (req: Request) => {
       }
 
       try {
-        stage = `retrieve_account_${txn.id}`;
-        const account = await stripe.accounts.retrieve(tradie.stripe_account_id);
+        stage = `retrieve_account_v2_${txn.id}`;
+        const account = await stripeV2Get(`core/accounts/${tradie.stripe_account_id}?include[]=configuration.merchant.capabilities`);
 
-        if (!account.charges_enabled || !account.payouts_enabled) {
+        const merchantConfig = (account.configuration as Record<string, unknown>)?.merchant as Record<string, unknown> | undefined;
+        const capabilities = merchantConfig?.capabilities as Record<string, Record<string, unknown>> | undefined;
+        const cardPaymentsStatus = capabilities?.card_payments?.status as string | undefined;
+        const transfersStatus = capabilities?.transfers?.status as string | undefined;
+
+        if (cardPaymentsStatus !== "active" || transfersStatus !== "active") {
           results.push({
             transactionId: txn.id,
             success: false,

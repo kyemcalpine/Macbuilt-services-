@@ -22,6 +22,45 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
+const STRIPE_V2_VERSION = "2026-08-26.preview";
+
+async function stripeV2Post(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const response = await fetch(`https://api.stripe.com/v2/${path}`, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
+      "Content-Type": "application/json",
+      "Stripe-Version": STRIPE_V2_VERSION,
+    },
+    body: JSON.stringify(body),
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const errMsg = (data as Record<string, unknown>)?.error
+      ? ((data as Record<string, unknown>).error as Record<string, unknown>)?.message
+      : `Stripe V2 API error: ${response.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : `Stripe V2 API error: ${response.status}`);
+  }
+  return data as Record<string, unknown>;
+}
+
+async function stripeV2Get(path: string): Promise<Record<string, unknown>> {
+  const response = await fetch(`https://api.stripe.com/v2/${path}`, {
+    headers: {
+      "Authorization": `Bearer ${STRIPE_SECRET_KEY}`,
+      "Stripe-Version": STRIPE_V2_VERSION,
+    },
+  });
+  const data = await response.json();
+  if (!response.ok) {
+    const errMsg = (data as Record<string, unknown>)?.error
+      ? ((data as Record<string, unknown>).error as Record<string, unknown>)?.message
+      : `Stripe V2 API error: ${response.status}`;
+    throw new Error(typeof errMsg === "string" ? errMsg : `Stripe V2 API error: ${response.status}`);
+  }
+  return data as Record<string, unknown>;
+}
+
 function sanitizeError(err: unknown, stage: string) {
   if (err && typeof err === "object" && "message" in err) {
     const e = err as Record<string, unknown>;
@@ -130,16 +169,20 @@ Deno.serve(async (req: Request) => {
 
     stage = "create_account_v2";
     if (!accountId) {
-      // Use the Accounts V2 API: POST /v2/core/accounts
-      // The V2 API replaces the V1 `type: "express"` with controller-based configuration.
-      // We request card_payments and transfers capabilities so the account can receive payouts.
-      const account = await stripe.accounts.create({
-        type: "express",
-        country: "AU",
-        email: profile.email,
-        capabilities: {
-          card_payments: { requested: true },
-          transfers: { requested: true },
+      const account = await stripeV2Post("core/accounts", {
+        contact_email: profile.email || undefined,
+        display_name: profile.business_name || profile.full_name || undefined,
+        identity: {
+          country: "AU",
+          entity_type: "company",
+        },
+        configuration: {
+          merchant: {
+            capabilities: {
+              card_payments: { requested: true },
+              transfers: { requested: true },
+            },
+          },
         },
         metadata: {
           user_id: userId,
@@ -148,7 +191,7 @@ Deno.serve(async (req: Request) => {
         },
       });
 
-      accountId = account.id;
+      accountId = account.id as string;
 
       stage = "save_account_id";
       await serviceClient
@@ -157,13 +200,14 @@ Deno.serve(async (req: Request) => {
         .eq("id", userId);
     }
 
-    stage = "create_onboarding_link";
+    stage = "create_onboarding_link_v2";
     const origin = req.headers.get("origin") || req.headers.get("referer") || "https://example.com";
-    const accountLink = await stripe.accountLinks.create({
+    const accountLink = await stripeV2Post("core/account_links", {
       account: accountId,
       refresh_url: `${origin}/#/profile?stripe_refresh=true`,
       return_url: `${origin}/#/profile?stripe_return=true`,
       type: "account_onboarding",
+      configurations: ["merchant"],
     });
 
     return new Response(
