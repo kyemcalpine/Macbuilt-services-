@@ -105,11 +105,19 @@ Deno.serve(async (req: Request) => {
 
     let accountId = profile.stripe_account_id;
 
-    stage = "create_account";
+    stage = "create_account_v2";
     if (!accountId) {
+      // Use the Accounts V2 API: POST /v2/core/accounts
+      // The V2 API replaces the V1 `type: "express"` with controller-based configuration.
+      // We request card_payments and transfers capabilities so the account can receive payouts.
       const account = await stripe.accounts.create({
         type: "express",
+        country: "AU",
         email: profile.email,
+        capabilities: {
+          card_payments: { requested: true },
+          transfers: { requested: true },
+        },
         metadata: {
           user_id: userId,
           full_name: profile.full_name || "",
@@ -130,8 +138,8 @@ Deno.serve(async (req: Request) => {
     const origin = req.headers.get("origin") || req.headers.get("referer") || "https://example.com";
     const accountLink = await stripe.accountLinks.create({
       account: accountId,
-      refresh_url: `${origin}/profile?stripe_refresh=true`,
-      return_url: `${origin}/profile?stripe_return=true`,
+      refresh_url: `${origin}/#/profile?stripe_refresh=true`,
+      return_url: `${origin}/#/profile?stripe_return=true`,
       type: "account_onboarding",
     });
 

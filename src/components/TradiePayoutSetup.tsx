@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 
 export function TradiePayoutSetup() {
-  const { profile } = useAuth()
+  const { profile, refreshProfile } = useAuth()
+  const location = useLocation()
+  const navigate = useNavigate()
   const [accountStatus, setAccountStatus] = useState<{
     connected: boolean
     chargesEnabled: boolean
@@ -11,16 +14,22 @@ export function TradiePayoutSetup() {
     detailsSubmitted?: boolean
   } | null>(null)
   const [loading, setLoading] = useState(false)
+  const [statusLoading, setStatusLoading] = useState(false)
   const [error, setError] = useState('')
+  const [success, setSuccess] = useState('')
 
   const isTradie = profile?.role === 'tradie' && profile?.verification_status === 'approved'
 
   const fetchStatus = async () => {
     if (!isTradie) return
+    setStatusLoading(true)
     try {
       const { data: session } = await supabase.auth.getSession()
       const token = session.session?.access_token
-      if (!token) return
+      if (!token) {
+        setStatusLoading(false)
+        return
+      }
 
       const apiUrl = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tradie-account-status`
       const response = await fetch(apiUrl, {
@@ -42,6 +51,8 @@ export function TradiePayoutSetup() {
     } catch (err) {
       console.error('Account status error:', err)
       setError(err instanceof Error ? err.message : 'Could not check payout status.')
+    } finally {
+      setStatusLoading(false)
     }
   }
 
@@ -49,9 +60,29 @@ export function TradiePayoutSetup() {
     fetchStatus()
   }, [])
 
+  // Handle return from Stripe onboarding
+  useEffect(() => {
+    const params = new URLSearchParams(location.search)
+    const stripeReturn = params.get('stripe_return')
+    const stripeRefresh = params.get('stripe_refresh')
+
+    if (stripeReturn === 'true' || stripeRefresh === 'true') {
+      refreshProfile().then(() => {
+        fetchStatus()
+      })
+      if (stripeReturn === 'true') {
+        setSuccess('Stripe onboarding completed. Your payout account is being verified.')
+      } else if (stripeRefresh === 'true') {
+        setError('Stripe onboarding was interrupted. Please try again.')
+      }
+      navigate('/profile', { replace: true })
+    }
+  }, [location.search, refreshProfile, navigate])
+
   const handleSetup = async () => {
     setLoading(true)
     setError('')
+    setSuccess('')
     try {
       const { data: session } = await supabase.auth.getSession()
       const token = session.session?.access_token
@@ -102,8 +133,14 @@ export function TradiePayoutSetup() {
       <h3 className="font-semibold text-neutral-900 mb-2">Payout Account</h3>
 
       {error && <div className="alert-error mb-4 text-sm">{error}</div>}
+      {success && <div className="alert-success mb-4 text-sm">{success}</div>}
 
-      {isReady ? (
+      {statusLoading && !accountStatus ? (
+        <div className="flex items-center gap-2 text-sm text-neutral-500">
+          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-600"></div>
+          Checking payout status...
+        </div>
+      ) : isReady ? (
         <div>
           <div className="flex items-center gap-2 mb-2">
             <span className="w-2 h-2 rounded-full bg-green-500"></span>
