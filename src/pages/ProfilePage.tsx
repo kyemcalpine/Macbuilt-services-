@@ -15,6 +15,7 @@ export function ProfilePage() {
   const [postcode, setPostcode] = useState('')
   const [businessName, setBusinessName] = useState('')
   const [abn, setAbn] = useState('')
+  const [noAbn, setNoAbn] = useState(false)
   const [tradeCategory, setTradeCategory] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -31,6 +32,7 @@ export function ProfilePage() {
       setPostcode(profile.postcode || '')
       setBusinessName(profile.business_name || '')
       setAbn(profile.abn || '')
+      setNoAbn(!profile.abn)
       setTradeCategory(profile.trade_category || '')
     }
   }, [profile])
@@ -82,7 +84,7 @@ export function ProfilePage() {
       updates.postcode = postcode
     } else if (profile?.role === 'tradie') {
       updates.business_name = businessName
-      updates.abn = abn
+      updates.abn = noAbn ? '' : abn
       updates.trade_category = tradeCategory
     }
 
@@ -192,7 +194,26 @@ export function ProfilePage() {
             </div>
             <div>
               <label className="label">ABN</label>
-              <input type="text" required value={abn} onChange={(e) => setAbn(e.target.value)} className="input" />
+              <input
+                type="text"
+                required={!noAbn}
+                value={noAbn ? '' : abn}
+                onChange={(e) => setAbn(e.target.value)}
+                disabled={noAbn}
+                className="input"
+              />
+              <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={noAbn}
+                  onChange={(e) => {
+                    setNoAbn(e.target.checked)
+                    if (e.target.checked) setAbn('')
+                  }}
+                  className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-neutral-600">I don't have an ABN / Do not use an ABN</span>
+              </label>
             </div>
             <div>
               <label className="label">Trade Category</label>

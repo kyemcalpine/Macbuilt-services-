@@ -15,6 +15,7 @@ export function SignUpPage() {
   const [postcode, setPostcode] = useState('')
   const [businessName, setBusinessName] = useState('')
   const [abn, setAbn] = useState('')
+  const [noAbn, setNoAbn] = useState(false)
   const [tradeCategory, setTradeCategory] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -44,7 +45,7 @@ export function SignUpPage() {
       metadata.postcode = postcode
     } else {
       metadata.business_name = businessName
-      metadata.abn = abn
+      metadata.abn = noAbn ? '' : abn
       metadata.trade_category = tradeCategory
     }
 
@@ -183,7 +184,27 @@ export function SignUpPage() {
               </div>
               <div>
                 <label className="label">ABN</label>
-                <input type="text" required value={abn} onChange={(e) => setAbn(e.target.value)} className="input" placeholder="12 345 678 901" />
+                <input
+                  type="text"
+                  required={!noAbn}
+                  value={noAbn ? '' : abn}
+                  onChange={(e) => setAbn(e.target.value)}
+                  disabled={noAbn}
+                  className="input"
+                  placeholder="12 345 678 901"
+                />
+                <label className="flex items-center gap-2 mt-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={noAbn}
+                    onChange={(e) => {
+                      setNoAbn(e.target.checked)
+                      if (e.target.checked) setAbn('')
+                    }}
+                    className="rounded border-neutral-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-neutral-600">I don't have an ABN / Do not use an ABN</span>
+                </label>
               </div>
               <div>
                 <label className="label">Trade Category</label>
