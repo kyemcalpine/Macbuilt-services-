@@ -115,12 +115,12 @@ Deno.serve(async (req: Request) => {
       .from("transactions")
       .select(`
         id, job_id, customer_id, tradie_id, gross_amount, platform_fee, net_amount,
-        status, metadata,
+        status, failure_reason, metadata,
         job:jobs!transactions_job_id_fkey ( id, title, customer_confirmed_at, assigned_tradie_id ),
         tradie:profiles!transactions_tradie_id_fkey ( id, stripe_account_id, email, full_name, business_name )
       `)
       .eq("type", "payout")
-      .eq("status", "payout_pending");
+      .in("status", ["payout_pending", "payout_failed"]);
 
     if (jobId) {
       query = query.eq("job_id", jobId);
@@ -204,6 +204,8 @@ Deno.serve(async (req: Request) => {
             transaction_id: txn.id,
             tradie_id: txn.tradie_id,
           },
+        }, {
+          idempotencyKey: `payout_${txn.id}`,
         });
 
         stage = `update_transaction_${txn.id}`;
@@ -246,6 +248,42 @@ Deno.serve(async (req: Request) => {
         });
       } catch (transferErr: any) {
         console.error(`Payout failed for transaction ${txn.id}:`, transferErr);
+
+        const isIdempotencyReplay = transferErr?.type === "idempotency_error" ||
+          (typeof transferErr?.message === "string" && transferErr.message.includes("already been used"));
+
+        if (isIdempotencyReplay) {
+          // A previous transfer with this idempotency key already succeeded — retrieve it
+          try {
+            const existingTransfers = await stripe.transfers.list({
+              destination: tradie.stripe_account_id,
+              limit: 10,
+            });
+            const matched = existingTransfers.data.find(
+              (t) => t.metadata?.transaction_id === txn.id
+            );
+            if (matched) {
+              await serviceClient
+                .from("transactions")
+                .update({
+                  status: "payout_succeeded",
+                  stripe_transfer_id: matched.id,
+                  failure_reason: null,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", txn.id);
+
+              results.push({
+                transactionId: txn.id,
+                success: true,
+                message: `Payout of ${txn.net_amount.toFixed(2)} transferred (recovered)`,
+              });
+              continue;
+            }
+          } catch {
+            // fall through to normal failure handling
+          }
+        }
 
         await serviceClient
           .from("transactions")

@@ -639,14 +639,17 @@ export function AdminPage() {
                         <p className="text-xs text-neutral-400">{formatDate(txn.created_at)}</p>
                       </div>
                     </div>
-                    {txn.type === 'payout' && txn.status === 'payout_pending' && (
+                    {txn.type === 'payout' && (txn.status === 'payout_pending' || txn.status === 'payout_failed') && (
                       <div className="mt-3 pt-3 border-t border-neutral-100">
+                        {txn.status === 'payout_failed' && txn.failure_reason && (
+                          <p className="text-sm text-red-600 mb-2">{txn.failure_reason}</p>
+                        )}
                         <button
                           onClick={() => handleReleasePayout(txn.id, txn.job_id)}
                           disabled={payoutLoadingId === txn.id}
                           className="btn-primary text-sm"
                         >
-                          {payoutLoadingId === txn.id ? 'Processing...' : 'Release Payout to Tradie'}
+                          {payoutLoadingId === txn.id ? 'Processing...' : txn.status === 'payout_failed' ? 'Retry Payout to Tradie' : 'Release Payout to Tradie'}
                         </button>
                       </div>
                     )}
