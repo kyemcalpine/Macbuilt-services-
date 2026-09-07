@@ -797,10 +797,10 @@ export function JobDetailPage() {
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-medium text-neutral-900">
-                              {quote.tradie?.full_name || quote.tradie?.email || 'Unknown'}
+                              {quote.tradie?.business_name || quote.tradie?.full_name || quote.tradie?.email || 'Unknown'}
                             </span>
-                            {quote.tradie?.business_name && (
-                              <span className="text-sm text-neutral-500">{quote.tradie.business_name}</span>
+                            {quote.tradie?.business_name && quote.tradie?.full_name && (
+                              <span className="text-sm text-neutral-500">{quote.tradie.full_name}</span>
                             )}
                             {tradieRatings[quote.tradie_id] && (
                               <span className="inline-flex items-center gap-1 ml-1">
@@ -869,7 +869,7 @@ export function JobDetailPage() {
                               disabled={actionLoading}
                               className="btn bg-green-600 text-white hover:bg-green-700 transition-colors text-sm"
                             >
-                              Accept {quote.response_type === 'quote' ? 'Quote' : ''}
+                              Accept {quote.response_type === 'quote' ? 'Quote' : 'Interest'}
                             </button>
                             <button
                               onClick={() => setConfirmAction({ type: 'reject', quoteId: quote.id })}
@@ -968,12 +968,12 @@ export function JobDetailPage() {
               <div className="space-y-3 text-sm">
                 <div>
                   <span className="text-neutral-500">Name</span>
-                  <p className="font-medium text-neutral-900">{job.assigned_tradie.full_name || 'Not provided'}</p>
+                  <p className="font-medium text-neutral-900">{job.assigned_tradie.business_name || job.assigned_tradie.full_name || 'Not provided'}</p>
                 </div>
-                {job.assigned_tradie.business_name && (
+                {job.assigned_tradie.business_name && job.assigned_tradie.full_name && (
                   <div>
-                    <span className="text-neutral-500">Business</span>
-                    <p className="font-medium text-neutral-900">{job.assigned_tradie.business_name}</p>
+                    <span className="text-neutral-500">Contact Person</span>
+                    <p className="font-medium text-neutral-900">{job.assigned_tradie.full_name}</p>
                   </div>
                 )}
                 <div>

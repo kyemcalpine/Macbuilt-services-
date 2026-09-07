@@ -108,7 +108,7 @@ export const JOB_STATUS_LABELS: Record<JobStatus, string> = {
 }
 
 export const VALID_STATUS_TRANSITIONS: Record<JobStatus, JobStatus[]> = {
-  open: ['assigned', 'cancelled'],
+  open: ['cancelled'],
   assigned: ['in_progress', 'cancelled'],
   in_progress: ['cancelled'],
   completed: [],
