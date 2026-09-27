@@ -5,7 +5,7 @@ import { supabase } from '../lib/supabase'
 import type { Profile, VerificationStatus, Transaction, Dispute, DisputeStatus } from '../types'
 import { TRANSACTION_TYPE_LABELS, TRANSACTION_STATUS_LABELS, DISPUTE_STATUS_LABELS } from '../types'
 
-type AdminTab = 'tradies' | 'conversations' | 'transactions' | 'disputes'
+type AdminTab = 'tradies' | 'conversations' | 'transactions' | 'disputes' | 'settings'
 
 interface ConversationRow {
   id: string
@@ -37,6 +37,9 @@ export function AdminPage() {
   const [disputeResolution, setDisputeResolution] = useState<{ disputeId: string; type: string; amount: string; notes: string } | null>(null)
   const [resolving, setResolving] = useState(false)
   const [payoutLoadingId, setPayoutLoadingId] = useState<string | null>(null)
+  const [upfrontPercent, setUpfrontPercent] = useState<number>(0)
+  const [upfrontSaving, setUpfrontSaving] = useState(false)
+  const [upfrontSuccess, setUpfrontSuccess] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [filter, setFilter] = useState<VerificationStatus | 'all'>('pending')
@@ -301,6 +304,15 @@ export function AdminPage() {
     }
   }
 
+  const fetchUpfrontSettings = useCallback(async () => {
+    const { data, error: fetchError } = await supabase.rpc('get_upfront_payment_percent')
+    if (fetchError) {
+      setError('Could not load upfront payment settings.')
+      return
+    }
+    setUpfrontPercent(data as number)
+  }, [])
+
   useEffect(() => {
     if (tab === 'tradies') {
       fetchTradies()
@@ -311,8 +323,10 @@ export function AdminPage() {
       fetchTransactions()
     } else if (tab === 'disputes') {
       fetchDisputes()
+    } else if (tab === 'settings') {
+      fetchUpfrontSettings()
     }
-  }, [tab, fetchTradies, fetchConversations, fetchNotificationActivity, fetchTransactions, fetchDisputes])
+  }, [tab, fetchTradies, fetchConversations, fetchNotificationActivity, fetchTransactions, fetchDisputes, fetchUpfrontSettings])
 
   const updateStatus = async (tradieId: string, status: VerificationStatus) => {
     const { error: fnError } = await supabase.rpc('set_tradie_verification', {
@@ -326,6 +340,21 @@ export function AdminPage() {
     }
 
     fetchTradies()
+  }
+
+  const handleSetUpfrontPercent = async (percent: number) => {
+    setUpfrontSaving(true)
+    setError('')
+    setUpfrontSuccess('')
+    const { error: rpcError } = await supabase.rpc('set_upfront_payment_percent', { p_percent: percent })
+    if (rpcError) {
+      setError(rpcError.message || 'Could not update upfront payment setting.')
+      setUpfrontSaving(false)
+      return
+    }
+    setUpfrontPercent(percent)
+    setUpfrontSuccess(`Upfront payment set to ${percent}%.`)
+    setUpfrontSaving(false)
   }
 
   const statusBadge = (status: string) => {
@@ -393,6 +422,16 @@ export function AdminPage() {
           }`}
         >
           Disputes
+        </button>
+        <button
+          onClick={() => setTab('settings')}
+          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === 'settings'
+              ? 'bg-primary-600 text-white'
+              : 'bg-white border border-neutral-300 text-neutral-600 hover:bg-neutral-50'
+          }`}
+        >
+          Settings
         </button>
       </div>
 
@@ -752,6 +791,70 @@ export function AdminPage() {
             </div>
           )}
         </>
+      )}
+
+      {/* Settings tab */}
+      {tab === 'settings' && (
+        <div className="space-y-6">
+          <div className="card p-6">
+            <h2 className="text-xl font-semibold text-neutral-900 mb-2">Upfront Payment Settings</h2>
+            <p className="text-sm text-neutral-600 mb-6">
+              Control what percentage of the agreed quote customers must pay upfront when a job is assigned.
+              The remaining balance can be paid later through the existing payment flow.
+            </p>
+
+            {upfrontSuccess && (
+              <div className="mb-4 p-3 rounded-lg bg-green-50 border border-green-200 text-sm text-green-700">
+                {upfrontSuccess}
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[0, 25, 50, 100].map((p) => (
+                <button
+                  key={p}
+                  onClick={() => handleSetUpfrontPercent(p)}
+                  disabled={upfrontSaving || upfrontPercent === p}
+                  className={`p-4 rounded-lg border-2 text-center transition-all ${
+                    upfrontPercent === p
+                      ? 'border-primary-600 bg-primary-50 text-primary-700'
+                      : 'border-neutral-200 hover:border-primary-300 text-neutral-600'
+                  } ${upfrontSaving ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <p className="text-2xl font-bold">{p}%</p>
+                  <p className="text-xs mt-1">
+                    {p === 0 ? 'No upfront' : p === 100 ? 'Full payment' : `${p}% upfront`}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-6 pt-6 border-t border-neutral-100">
+              <h3 className="text-sm font-medium text-neutral-900 mb-3">How it works</h3>
+              <ul className="space-y-2 text-sm text-neutral-600">
+                <li className="flex items-start gap-2">
+                  <span className="text-primary-600 mt-0.5">•</span>
+                  <span><strong>0%</strong> — No upfront payment required. Customers can pay at any time, or use the existing 50% deposit flow.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary-600 mt-0.5">•</span>
+                  <span><strong>25%</strong> — Customers pay 25% of the agreed quote upfront. The remaining 75% can be paid later.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary-600 mt-0.5">•</span>
+                  <span><strong>50%</strong> — Customers pay 50% upfront. The remaining 50% can be paid later.</span>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="text-primary-600 mt-0.5">•</span>
+                  <span><strong>100%</strong> — Customers must pay the full amount upfront before work begins.</span>
+                </li>
+              </ul>
+              <p className="text-xs text-neutral-400 mt-4">
+                This setting applies platform-wide to all new and existing assigned jobs. The percentage is read server-side by the payment system — clients cannot override it.
+              </p>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Admin info */}

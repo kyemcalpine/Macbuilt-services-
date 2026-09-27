@@ -129,6 +129,7 @@ async function processSuccessfulPayment(
     deposit: "50% deposit",
     remaining: "remaining balance",
     full: "full payment",
+    upfront: "upfront payment",
   };
   const paymentLabel = labelMap[paymentType || ""] || "payment";
 

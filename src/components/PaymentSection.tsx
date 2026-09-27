@@ -10,7 +10,7 @@ interface PaymentSectionProps {
   onJobUpdated: () => void
 }
 
-type PaymentType = 'full' | 'deposit' | 'remaining'
+type PaymentType = 'full' | 'deposit' | 'remaining' | 'upfront'
 
 export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   const { profile } = useAuth()
@@ -23,6 +23,7 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   const [successMsg, setSuccessMsg] = useState('')
   const [showDepositForm, setShowDepositForm] = useState(false)
   const [depositMessage, setDepositMessage] = useState('')
+  const [upfrontPercent, setUpfrontPercent] = useState(0)
 
   const isOwner = profile?.id === job.customer_id
   const isAssignedTradie = profile?.id === job.assigned_tradie_id
@@ -38,9 +39,18 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
     if (data) setTransactions(data as Transaction[])
   }, [job.id])
 
+  const fetchUpfrontPercent = useCallback(async () => {
+    const { data } = await supabase.rpc('get_upfront_payment_percent')
+    if (data != null) setUpfrontPercent(data as number)
+  }, [])
+
   useEffect(() => {
     fetchTransactions()
   }, [fetchTransactions])
+
+  useEffect(() => {
+    fetchUpfrontPercent()
+  }, [fetchUpfrontPercent])
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
@@ -71,6 +81,7 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   const paidAmount = Number(job.paid_amount || 0)
   const remainingAmount = Math.max(0, Math.round((agreedAmount - paidAmount) * 100) / 100)
   const depositAmount = Math.round(agreedAmount * 0.50 * 100) / 100
+  const upfrontAmount = Math.round(agreedAmount * (upfrontPercent / 100) * 100) / 100
 
   const handlePay = async (paymentType: PaymentType) => {
     setPayLoading(true)
@@ -159,7 +170,11 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
   const showPayoutStatus = isAssignedTradie && (paymentStatus === 'paid' || paymentStatus === 'partially_paid')
   const payoutTxn = transactions.find((t) => t.type === 'payout')
 
+  const upfrontDue = upfrontPercent > 0 && paidAmount < upfrontAmount
+  const upfrontPaid = upfrontPercent > 0 && paidAmount >= upfrontAmount
+
   const paymentTypeLabel: Record<PaymentType, string> = {
+    upfront: `Pay ${upfrontPercent}% Upfront (${formatAmount(upfrontAmount)})`,
     deposit: `Pay 50% Deposit (${formatAmount(depositAmount)})`,
     remaining: `Pay Remaining Balance (${formatAmount(remainingAmount)})`,
     full: `Pay Full Amount (${formatAmount(remainingAmount)})`,
@@ -170,6 +185,26 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
       <div className="flex items-center justify-between mb-4">
         <h3 className="font-semibold text-neutral-900">Payment</h3>
         <PaymentStatusBadge status={paymentStatus} />
+      </div>
+
+      {/* Payment stages */}
+      <div className="space-y-2 mb-4">
+        <PaymentStage
+          label="Upfront Payment"
+          percent={upfrontPercent}
+          amount={upfrontAmount}
+          paid={upfrontPaid}
+          due={upfrontDue}
+          show={upfrontPercent > 0}
+        />
+        <PaymentStage
+          label="Full Balance"
+          percent={100}
+          amount={agreedAmount}
+          paid={paymentStatus === 'paid'}
+          due={paymentStatus !== 'paid' && paymentStatus !== 'disputed'}
+          show={true}
+        />
       </div>
 
       <div className="space-y-3 text-sm">
@@ -199,6 +234,18 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
         </div>
       </div>
 
+      {/* Upfront payment banner */}
+      {upfrontDue && isOwner && (
+        <div className="mt-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
+          <p className="text-sm text-blue-700 font-medium">
+            An upfront payment of {upfrontPercent}% ({formatAmount(upfrontAmount)}) is required for this job.
+          </p>
+          <p className="text-xs text-blue-500 mt-1">
+            You can pay the upfront amount now and the remaining balance later.
+          </p>
+        </div>
+      )}
+
       {/* Deposit request banner */}
       {job.deposit_requested_at && (
         <div className="mt-4 p-3 rounded-lg bg-blue-50 border border-blue-200">
@@ -227,7 +274,19 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
       {/* Customer payment buttons */}
       {canPay && (
         <div className="mt-4 space-y-2">
-          {job.deposit_requested_at && paidAmount === 0 && (
+          {/* Upfront payment button — shown when upfront is required and not yet paid */}
+          {upfrontDue && (
+            <button
+              onClick={() => handlePay('upfront')}
+              disabled={payLoading}
+              className="btn-primary w-full"
+            >
+              {payLoading ? 'Processing...' : paymentTypeLabel.upfront}
+            </button>
+          )}
+
+          {/* Deposit button — shown when tradie requested deposit and nothing paid yet */}
+          {job.deposit_requested_at && paidAmount === 0 && !upfrontDue && (
             <button
               onClick={() => handlePay('deposit')}
               disabled={payLoading}
@@ -236,6 +295,8 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
               {payLoading ? 'Processing...' : paymentTypeLabel.deposit}
             </button>
           )}
+
+          {/* Remaining balance — shown when partial payment has been made */}
           {paidAmount > 0 && remainingAmount > 0 && (
             <button
               onClick={() => handlePay('remaining')}
@@ -245,7 +306,9 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
               {payLoading ? 'Processing...' : paymentTypeLabel.remaining}
             </button>
           )}
-          {paidAmount === 0 && !job.deposit_requested_at && (
+
+          {/* Full payment + deposit option — shown when nothing paid and no deposit requested and no upfront due */}
+          {paidAmount === 0 && !job.deposit_requested_at && !upfrontDue && (
             <>
               <button
                 onClick={() => handlePay('full')}
@@ -263,7 +326,9 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
               </button>
             </>
           )}
-          {paidAmount === 0 && job.deposit_requested_at && (
+
+          {/* Full payment when deposit was requested but no upfront due */}
+          {paidAmount === 0 && job.deposit_requested_at && !upfrontDue && (
             <button
               onClick={() => handlePay('full')}
               disabled={payLoading}
@@ -272,8 +337,22 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
               {payLoading ? 'Processing...' : `Pay Full Amount (${formatAmount(remainingAmount)})`}
             </button>
           )}
+
+          {/* Remaining balance after upfront paid */}
+          {upfrontPaid && paidAmount > 0 && remainingAmount > 0 && !upfrontDue && (
+            <button
+              onClick={() => handlePay('remaining')}
+              disabled={payLoading}
+              className="btn-primary w-full"
+            >
+              {payLoading ? 'Processing...' : paymentTypeLabel.remaining}
+            </button>
+          )}
+
           <p className="text-xs text-neutral-400 mt-1">
-            You can pay at any time during the job. A 50% deposit option is available if the tradie requests it or if you prefer to pay in installments.
+            {upfrontPercent > 0
+              ? `This platform requires a ${upfrontPercent}% upfront payment. You can pay the remaining balance at any time during the job.`
+              : 'You can pay at any time during the job. A 50% deposit option is available if the tradie requests it or if you prefer to pay in installments.'}
           </p>
         </div>
       )}
@@ -390,6 +469,47 @@ export function PaymentSection({ job, onJobUpdated }: PaymentSectionProps) {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function PaymentStage({ label, percent, amount, paid, due, show }: {
+  label: string
+  percent: number
+  amount: number
+  paid: boolean
+  due: boolean
+  show: boolean
+}) {
+  if (!show) return null
+  const formatAmt = (n: number) =>
+    `$${n.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  return (
+    <div className={`flex items-center justify-between p-2 rounded-lg text-sm ${
+      paid ? 'bg-green-50' : due ? 'bg-amber-50' : 'bg-neutral-50'
+    }`}>
+      <div className="flex items-center gap-2">
+        {paid ? (
+          <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+        ) : due ? (
+          <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        )}
+        <span className={paid ? 'text-green-700' : due ? 'text-amber-700' : 'text-neutral-500'}>
+          {label} ({percent}%)
+        </span>
+      </div>
+      <span className={`font-medium ${paid ? 'text-green-700' : due ? 'text-amber-700' : 'text-neutral-500'}`}>
+        {formatAmt(amount)}
+      </span>
     </div>
   )
 }

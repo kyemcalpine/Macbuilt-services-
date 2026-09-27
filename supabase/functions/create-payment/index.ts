@@ -21,7 +21,7 @@ const stripe = new Stripe(STRIPE_SECRET_KEY || "", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
-type PaymentType = "full" | "deposit" | "remaining";
+type PaymentType = "full" | "deposit" | "remaining" | "upfront";
 
 function sanitizeError(err: unknown, stage: string) {
   if (err && typeof err === "object" && "message" in err) {
@@ -113,8 +113,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    if (!["full", "deposit", "remaining"].includes(paymentType)) {
-      return new Response(JSON.stringify({ error: "Invalid payment type. Must be 'full', 'deposit', or 'remaining'." }), {
+    if (!["full", "deposit", "remaining", "upfront"].includes(paymentType)) {
+      return new Response(JSON.stringify({ error: "Invalid payment type. Must be 'full', 'deposit', 'remaining', or 'upfront'." }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -174,8 +174,33 @@ Deno.serve(async (req: Request) => {
     const agreedAmount = Number(job.agreed_quote_amount);
     const paidSoFar = Number(job.paid_amount || 0);
     let paymentAmount: number;
+    let upfrontPercent = 0;
 
-    if (paymentType === "deposit") {
+    if (paymentType === "upfront") {
+      // Fetch the platform-wide upfront percentage from the database (server-side, never trust client)
+      const { data: settingsData, error: settingsError } = await serviceClient
+        .from("platform_settings")
+        .select("upfront_payment_percent")
+        .eq("id", 1)
+        .maybeSingle();
+
+      if (settingsError || !settingsData) {
+        return new Response(JSON.stringify({ error: "Could not determine upfront payment percentage. Please try again." }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      upfrontPercent = settingsData.upfront_payment_percent;
+      if (upfrontPercent <= 0) {
+        return new Response(JSON.stringify({ error: "Upfront payments are not currently required." }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      paymentAmount = Math.round(agreedAmount * (upfrontPercent / 100) * 100) / 100;
+    } else if (paymentType === "deposit") {
       paymentAmount = Math.round(agreedAmount * 0.50 * 100) / 100;
     } else if (paymentType === "remaining") {
       paymentAmount = Math.round((agreedAmount - paidSoFar) * 100) / 100;
@@ -211,6 +236,7 @@ Deno.serve(async (req: Request) => {
       deposit: "50% Deposit",
       remaining: "Remaining Balance",
       full: "Full Payment",
+      upfront: `${upfrontPercent}% Upfront Payment`,
     };
 
     stage = "create_checkout";

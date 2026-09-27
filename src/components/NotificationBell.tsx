@@ -23,6 +23,8 @@ const NOTIFICATION_ICONS: Record<NotificationType, string> = {
   dispute_raised: 'M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z',
   dispute_resolved: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
   deposit_requested: 'M3 10h18M7 15h1m4 0h1m4 0h1M3 5h18M3 5a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V7a2 2 0 00-2-2',
+  upfront_payment_required: 'M3 10h18M7 15h1m4 0h1m4 0h1M3 5h18M3 5a2 2 0 00-2 2v8a2 2 0 002 2h18a2 2 0 002-2V7a2 2 0 00-2-2',
+  deposit_paid: 'M5 13l4 4L19 7',
 }
 
 function formatRelativeTime(dateStr: string): string {

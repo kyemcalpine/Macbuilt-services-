@@ -181,6 +181,8 @@ export type NotificationType =
   | 'dispute_raised'
   | 'dispute_resolved'
   | 'deposit_requested'
+  | 'upfront_payment_required'
+  | 'deposit_paid'
 
 export interface JobReview {
   id: string
@@ -250,6 +252,8 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'dispute_raised',
   'dispute_resolved',
   'deposit_requested',
+  'upfront_payment_required',
+  'deposit_paid',
 ]
 
 export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
@@ -272,6 +276,8 @@ export const NOTIFICATION_TYPE_LABELS: Record<NotificationType, string> = {
   dispute_raised: 'Dispute Raised',
   dispute_resolved: 'Dispute Resolved',
   deposit_requested: 'Deposit Requested',
+  upfront_payment_required: 'Upfront Payment Required',
+  deposit_paid: 'Deposit Paid',
 }
 
 export type ActivityType =
